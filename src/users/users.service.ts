@@ -1,0 +1,96 @@
+import {
+  Injectable,
+  NotFoundException,
+  ConflictException,
+} from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { User } from './entities/user.entity';
+import { CreateUserDto } from './dto/create-user.dto';
+import { UpdateUserDto } from './dto/update-user.dto';
+import * as bcrypt from 'bcryptjs';
+import * as crypto from 'crypto';
+
+@Injectable()
+export class UsersService {
+  constructor(
+    @InjectRepository(User)
+    private readonly repo: Repository<User>,
+  ) {}
+
+  async create(dto: CreateUserDto) {
+    const existing = await this.repo.findOneBy({ email: dto.email });
+    if (existing) throw new ConflictException('Email already in use');
+    const hashed = await bcrypt.hash(dto.password, 10);
+    const user = this.repo.create({ ...dto, password: hashed });
+    return this.repo.save(user);
+  }
+
+  findAll() {
+    return this.repo.find({ relations: ['role'] });
+  }
+
+  async findOne(id: number) {
+    const user = await this.repo.findOne({
+      where: { id },
+      relations: ['role'],
+    });
+    if (!user) throw new NotFoundException(`User #${id} not found`);
+    return user;
+  }
+
+  findByEmail(email: string) {
+    return this.repo.findOne({
+      where: { email },
+      select: ['id', 'email', 'password', 'roleId', 'isActive'],
+    });
+  }
+
+  async update(id: number, dto: UpdateUserDto) {
+    await this.findOne(id);
+    await this.repo.update(id, dto);
+    return this.findOne(id);
+  }
+
+  async remove(id: number) {
+    const user = await this.findOne(id);
+    return this.repo.remove(user);
+  }
+
+  async generatePasswordResetToken(email: string) {
+    const user = await this.repo.findOneBy({ email });
+    if (!user) throw new NotFoundException('User not found');
+
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    const resetTokenExpiry = new Date(Date.now() + 3600000); // 1 hour
+
+    await this.repo.update(user.id, {
+      resetToken,
+      resetTokenExpiry,
+    });
+
+    return resetToken;
+  }
+
+  async resetPassword(resetToken: string, newPassword: string) {
+    const user = await this.repo.findOne({
+      where: { resetToken },
+      select: ['id', 'resetTokenExpiry'],
+    });
+
+    if (!user) throw new NotFoundException('Invalid reset token');
+
+    if (new Date() > user.resetTokenExpiry) {
+      throw new NotFoundException('Reset token expired');
+    }
+
+    const hashed = await bcrypt.hash(newPassword, 10);
+    await this.repo.update(user.id, {
+      password: hashed,
+      resetToken: '',
+      resetTokenExpiry: new Date(0),
+    });
+
+    return { message: 'Password reset successfully' };
+  }
+}
