@@ -37,6 +37,7 @@
     "pg": "^8.20.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
+    "stripe": "^12.18.0",
     "typeorm": "^0.3.28"
   },
   "devDependencies": {
@@ -53,6 +54,7 @@
     "@types/passport-jwt": "^4.0.1",
     "@types/passport-local": "^1.0.38",
     "@types/pg": "^8.20.0",
+    "@types/stripe": "^8.0.416",
     "@types/supertest": "^7.0.0",
     "eslint": "^9.18.0",
     "eslint-config-prettier": "^10.0.1",
