@@ -10,6 +10,7 @@ import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import * as bcrypt from 'bcryptjs';
 import * as crypto from 'crypto';
+import { UpdateProfileDto } from '../auth/dto/update-profile.dto';
 
 @Injectable()
 export class UsersService {
@@ -39,10 +40,27 @@ export class UsersService {
     return user;
   }
 
+  async findOneWithPassword(id: number) {
+    const user = await this.repo.findOne({
+      where: { id },
+      select: ['id', 'email', 'password', 'roleId', 'isActive'],
+    });
+
+    if (!user) throw new NotFoundException(`User #${id} not found`);
+    return user;
+  }
+
   findByEmail(email: string) {
     return this.repo.findOne({
       where: { email },
-      select: ['id', 'email', 'password', 'roleId', 'isActive'],
+      select: [
+        'id',
+        'email',
+        'password',
+        'roleId',
+        'isActive',
+        'otpVerifiedAt',
+      ],
     });
   }
 
@@ -92,5 +110,35 @@ export class UsersService {
     });
 
     return { message: 'Password reset successfully' };
+  }
+
+  async updateProfile(userId: number, dto: UpdateProfileDto) {
+    const user = await this.repo.findOneBy({ id: userId });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    await this.repo.update(userId, dto);
+
+    return this.findOne(userId);
+  }
+
+  async updatePassword(userId: number, password: string) {
+    await this.repo.update(userId, { password });
+  }
+
+  async updateStripeCustomerId(
+    userId: number,
+    stripeCustomerId: string,
+  ): Promise<void> {
+    await this.repo.update(userId, { stripeCustomerId });
+  }
+
+  async updateSubscriptionStatus(
+    userId: number,
+    activePlanId: number | null,
+  ): Promise<void> {
+    await this.repo.update(userId, { activePlanId });
   }
 }

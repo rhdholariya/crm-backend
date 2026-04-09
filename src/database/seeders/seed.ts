@@ -2,6 +2,7 @@ import { DataSource } from 'typeorm';
 import { Role } from '../../roles/entities/role.entity';
 import { User } from '../../users/entities/user.entity';
 import * as bcrypt from 'bcryptjs';
+import { seedFeatures } from './features.seed';
 
 export async function seed(dataSource: DataSource) {
   const roleRepo = dataSource.getRepository(Role);
@@ -39,4 +40,6 @@ export async function seed(dataSource: DataSource) {
     await userRepo.save(admin);
     console.log('✓ Admin user created (admin@example.com / Admin@123)');
   }
+
+  await seedFeatures(dataSource);
 }

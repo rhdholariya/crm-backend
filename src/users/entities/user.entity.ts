@@ -45,6 +45,15 @@ export class User {
   @JoinColumn({ name: 'roleId' })
   role: Role;
 
+  @Column({ type: 'timestamp', nullable: true })
+  otpVerifiedAt: Date;
+
+  @Column({ type: 'varchar', nullable: true, default: null })
+  stripeCustomerId: string | null;
+
+  @Column({ type: 'int', nullable: true, default: null })
+  activePlanId: number | null;
+
   @CreateDateColumn()
   createdAt: Date;
 

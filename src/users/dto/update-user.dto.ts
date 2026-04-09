@@ -1,4 +1,10 @@
-import { IsString, IsInt, IsBoolean, IsOptional } from 'class-validator';
+import {
+  IsString,
+  IsInt,
+  IsBoolean,
+  IsOptional,
+  IsDateString,
+} from 'class-validator';
 
 export class UpdateUserDto {
   @IsString()
@@ -16,4 +22,8 @@ export class UpdateUserDto {
   @IsInt()
   @IsOptional()
   roleId?: number;
+
+  @IsOptional()
+  @IsDateString()
+  otpVerifiedAt?: Date;
 }

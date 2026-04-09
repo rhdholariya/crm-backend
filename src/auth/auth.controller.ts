@@ -11,6 +11,8 @@ import { CurrentUser } from './decorators/current-user.decorator';
 import { successResponse } from '../common/utils/response.util';
 import { SendOtpDto } from './dto/send-otp.dto';
 import { VerifyOtpDto } from './dto/verify-otp.dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
+import { UpdateProfileDto } from './dto/update-profile.dto';
 
 @Controller('auth')
 export class AuthController {
@@ -27,6 +29,13 @@ export class AuthController {
   login(@Req() req: Request & { user: AuthUser }) {
     const user = this.authService.login(req.user);
     return successResponse('User login successfully', user);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('refresh-token')
+  refreshToken(@CurrentUser() user: AuthUser) {
+    const result = this.authService.refreshToken(user);
+    return successResponse('Token refreshed successfully', result);
   }
 
   @UseGuards(JwtAuthGuard)
@@ -54,13 +63,34 @@ export class AuthController {
     return successResponse(result.message);
   }
 
+  @UseGuards(JwtAuthGuard)
+  @Post('change-password')
+  async changePassword(
+    @CurrentUser() user: AuthUser,
+    @Body() dto: ChangePasswordDto,
+  ) {
+    const result = await this.authService.changePassword(user.id, dto);
+    return successResponse(result.message);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('update-profile')
+  async updateProfile(
+    @CurrentUser() user: AuthUser,
+    @Body() dto: UpdateProfileDto,
+  ) {
+    const updatedUser = await this.authService.updateProfile(user.id, dto);
+    return successResponse('Profile updated successfully', updatedUser);
+  }
+
   @Post('send-otp')
   sendOtp(@Body() dto: SendOtpDto) {
     return this.authService.sendOtp(dto.email);
   }
 
   @Post('verify-otp')
-  verifyOtp(@Body() dto: VerifyOtpDto) {
-    return this.authService.verifyOtp(dto.email, dto.otp);
+  async verifyOtp(@Body() dto: VerifyOtpDto) {
+    const result = await this.authService.verifyOtp(dto.email, dto.otp);
+    return successResponse(result.message, result);
   }
 }

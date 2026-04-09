@@ -8,6 +8,8 @@ import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { AuthUser } from './entities/auth-user.entity';
 import * as bcrypt from 'bcryptjs';
+import { ChangePasswordDto } from './dto/change-password.dto';
+import { UpdateProfileDto } from './dto/update-profile.dto';
 
 @Injectable()
 export class AuthService {
@@ -29,14 +31,32 @@ export class AuthService {
   ): Promise<AuthUser | null> {
     const user = await this.usersService.findByEmail(email);
     if (!user) return null;
+
+    if (!user.otpVerifiedAt) {
+      throw new BadRequestException('Please verify OTP before login');
+    }
+
     const valid = await bcrypt.compare(password, user.password);
     if (!valid) return null;
+
     return { id: user.id, email: user.email, roleId: user.roleId };
   }
 
   login(user: AuthUser) {
     const payload = { sub: user.id, email: user.email, roleId: user.roleId };
-    return { access_token: this.jwtService.sign(payload), user };
+    return {
+      access_token: this.jwtService.sign(payload),
+      refresh_token: this.jwtService.sign(payload, { expiresIn: '15m' }),
+      user,
+    };
+  }
+
+  refreshToken(user: AuthUser) {
+    const payload = { sub: user.id, email: user.email, roleId: user.roleId };
+
+    return {
+      access_token: this.jwtService.sign(payload, { expiresIn: '15m' }),
+    };
   }
 
   async register(dto: RegisterDto) {
@@ -48,12 +68,15 @@ export class AuthService {
       roleId: userRole.id,
     });
 
-    const payload = { sub: user.id, email: user.email, roleId: user.roleId };
-    return { access_token: this.jwtService.sign(payload), user };
+    return { user };
   }
 
   async me(userId: number) {
-    return this.usersService.findOne(userId);
+    const user = await this.usersService.findOne(userId);
+
+    const { roleId: _roleId, ...rest } = user;
+
+    return rest;
   }
 
   async forgotPassword(dto: ForgotPasswordDto) {
@@ -86,7 +109,7 @@ export class AuthService {
     return { message: 'OTP sent successfully' };
   }
 
-  verifyOtp(email: string, otp: string) {
+  async verifyOtp(email: string, otp: string) {
     const record = this.otpStore.get(email);
 
     if (!record) {
@@ -104,10 +127,68 @@ export class AuthService {
 
     this.otpStore.delete(email);
 
-    return { message: 'OTP verified successfully' };
+    const user = await this.usersService.findByEmail(email);
+    if (!user) {
+      throw new BadRequestException('User not found');
+    }
+
+    // ✅ SET TIMESTAMP
+    const now = new Date();
+
+    await this.usersService.update(user.id, {
+      otpVerifiedAt: now,
+    });
+
+    const payload = { sub: user.id, email: user.email, roleId: user.roleId };
+
+    return {
+      message: 'OTP verified successfully',
+      access_token: this.jwtService.sign(payload),
+      refresh_token: this.jwtService.sign(payload, { expiresIn: '7d' }),
+      user: {
+        id: user.id,
+        email: user.email,
+        roleId: user.roleId,
+        otpVerifiedAt: now,
+      },
+    };
   }
 
   async resetPassword(dto: ResetPasswordDto) {
     return this.usersService.resetPassword(dto.resetToken, dto.newPassword);
+  }
+
+  async changePassword(userId: number, dto: ChangePasswordDto) {
+    const { currentPassword, newPassword, confirmPassword } = dto;
+
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      throw new BadRequestException('All fields are required');
+    }
+
+    if (newPassword !== confirmPassword) {
+      throw new BadRequestException('Passwords do not match');
+    }
+
+    const user = await this.usersService.findOneWithPassword(userId);
+
+    if (!user.password) {
+      throw new BadRequestException('Password not found');
+    }
+
+    const isMatch = await bcrypt.compare(currentPassword, user.password);
+
+    if (!isMatch) {
+      throw new BadRequestException('Current password is incorrect');
+    }
+
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+    await this.usersService.updatePassword(userId, hashedPassword);
+
+    return { message: 'Password changed successfully' };
+  }
+
+  async updateProfile(userId: number, dto: UpdateProfileDto) {
+    return this.usersService.updateProfile(userId, dto);
   }
 }

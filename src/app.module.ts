@@ -7,6 +7,10 @@ import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
 import { RolesModule } from './roles/roles.module';
 import { DatabaseModule } from './database/database.module';
+import { PlansModule } from './plans/plans.module';
+import { PaymentsModule } from './payments/payments.module';
+import { PaymentSettingsModule } from './payment-settings/payment-settings.module';
+import { FeaturesModule } from './features/features.module';
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -26,6 +30,10 @@ import { DatabaseModule } from './database/database.module';
     AuthModule,
     UsersModule,
     RolesModule,
+    PlansModule,
+    PaymentsModule,
+    PaymentSettingsModule,
+    FeaturesModule,
   ],
   controllers: [AppController],
   providers: [AppService],

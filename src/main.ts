@@ -3,11 +3,14 @@ import { BadRequestException, ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
-  app.enableCors({
-    origin: '*', // allow all (dev only)
+  const app = await NestFactory.create(AppModule, {
+    rawBody: true,  // ← add this for Stripe webhook
   });
-  // Global validation pipe
+  app.enableCors({
+    origin: '*',
+  });
+  app.setGlobalPrefix('api');
+
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
