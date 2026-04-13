@@ -28,7 +28,7 @@ export class Payment {
   @Column()
   planId: number;
 
-  @Column()
+  @Column({ nullable: true })
   stripeSessionId: string;
 
   @Column({ nullable: true })

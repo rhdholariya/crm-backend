@@ -27,8 +27,17 @@ export class UsersService {
     return this.repo.save(user);
   }
 
-  findAll() {
-    return this.repo.find({ relations: ['role'] });
+  async findAll(page = 1, limit = 10) {
+    const [data, total] = await this.repo
+      .createQueryBuilder('user')
+      .leftJoinAndSelect('user.role', 'role')
+      .where('user.roleId != :roleId', { roleId: 1 })
+      .orderBy('user.id', 'DESC')
+      .skip((page - 1) * limit)
+      .take(limit)
+      .getManyAndCount();
+
+    return { total, page, limit, totalPages: Math.ceil(total / limit), data };
   }
 
   async findOne(id: number) {

@@ -11,6 +11,9 @@ import { PlansModule } from './plans/plans.module';
 import { PaymentsModule } from './payments/payments.module';
 import { PaymentSettingsModule } from './payment-settings/payment-settings.module';
 import { FeaturesModule } from './features/features.module';
+import { TagsModule } from './tags/tags.module';
+import { ContactsModule } from './contacts/contacts.module';
+import { WhatsAppModule } from './whatsapp/whatsapp.module';
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -34,6 +37,9 @@ import { FeaturesModule } from './features/features.module';
     PaymentsModule,
     PaymentSettingsModule,
     FeaturesModule,
+    TagsModule,
+    ContactsModule,
+    WhatsAppModule,
   ],
   controllers: [AppController],
   providers: [AppService],

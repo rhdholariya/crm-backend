@@ -1,6 +1,40 @@
 import { NestFactory } from '@nestjs/core';
-import { BadRequestException, ValidationPipe } from '@nestjs/common';
+import { BadRequestException, ValidationPipe, Logger } from '@nestjs/common';
 import { AppModule } from './app.module';
+
+// ── Prevent Puppeteer/WhatsApp context errors from crashing the process ───────
+const logger = new Logger('ProcessGuard');
+
+process.on('uncaughtException', (err: Error) => {
+  const msg = err?.message || '';
+  if (
+    msg.includes('Execution context was destroyed') ||
+    msg.includes('Protocol error') ||
+    msg.includes('Target closed') ||
+    msg.includes('Session closed') ||
+    msg.includes('Navigation failed')
+  ) {
+    logger.warn(`[ProcessGuard] Suppressed Puppeteer error: ${msg}`);
+    return; // swallow — WhatsApp disconnected event will handle cleanup
+  }
+  logger.error(`[ProcessGuard] Uncaught exception: ${msg}`);
+  logger.error(err.stack ?? '');
+  // Don't exit for known non-fatal errors
+});
+
+process.on('unhandledRejection', (reason: any) => {
+  const msg = reason?.message || String(reason);
+  if (
+    msg.includes('Execution context was destroyed') ||
+    msg.includes('Protocol error') ||
+    msg.includes('Target closed') ||
+    msg.includes('Session closed')
+  ) {
+    logger.warn(`[ProcessGuard] Suppressed Puppeteer rejection: ${msg}`);
+    return;
+  }
+  logger.error(`[ProcessGuard] Unhandled rejection: ${msg}`);
+});
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
