@@ -90,17 +90,23 @@ export class WhatsAppGateway
   @SubscribeMessage('viewing_chat')
   handleViewingChat(
     @ConnectedSocket() socket: Socket,
-    @MessageBody() chatId: string,
+    @MessageBody() data: string | { chatId: string } | any,
   ) {
     const { userId, profileId } = socket.data || {};
     if (!userId || !profileId) return;
+
+    // Handle both string and object payloads from frontend
+    const chatId = typeof data === 'string' ? data : (data?.chatId || data?.id || null);
     this.logger.log(`[SOCKET] viewing_chat → userId=${userId} chatId=${chatId}`);
+
     const session = findSession(userId, profileId);
     if (session) {
       session.activeViewers[socket.id] = chatId || null;
       if (chatId && session.chatStore[chatId]) {
         session.chatStore[chatId].unreadCount = 0;
         session.broadcast('chats', session.buildChatList());
+        // Send blue tick to sender
+        this.waService.markRead(userId, profileId, chatId).catch(() => {});
       }
     }
   }
@@ -159,7 +165,49 @@ export class WhatsAppGateway
     socket.emit('status_unsubscribe_result', { success: true });
   }
 
-  // ── Admin: get all sessions summary ─────────────────────────────────────────
+  // ── Subscribe to presence for a specific contact ────────────────────────────
+  @SubscribeMessage('subscribe_presence')
+  async handleSubscribePresence(
+    @ConnectedSocket() socket: Socket,
+    @MessageBody() data: string | { chatId: string },
+  ) {
+    const { userId, profileId } = socket.data || {};
+    if (!userId || !profileId) {
+      this.logger.warn(`[SOCKET] subscribe_presence — no userId/profileId in socket.data, did you emit 'join' first?`);
+      socket.emit('presence', { error: 'Not joined — emit join first' });
+      return;
+    }
+    const chatId = typeof data === 'string' ? data : data?.chatId;
+    if (!chatId) return;
+
+    this.logger.log(`[SOCKET] subscribe_presence → userId=${userId} profileId=${profileId} chatId=${chatId}`);
+    const session = findSession(Number(userId), String(profileId));
+    this.logger.log(`[SOCKET] session found=${!!session} connected=${session?.isConnected()}`);
+
+    if (!session?.isConnected()) {
+      socket.emit('presence', { chatId, isOnline: false, isTyping: false, lastSeen: null, error: 'Not connected' });
+      return;
+    }
+
+    // Get initial presence immediately
+    const presence = await session.getPresence(chatId);
+    this.logger.log(`[SOCKET] initial presence result=${JSON.stringify(presence)}`);
+    if (presence) {
+      socket.emit('presence', presence);
+    }
+
+    // Start real-time watch — sends updates whenever state changes
+    const stopWatch = await session.watchPresence(chatId, (update) => {
+      if (socket.connected) {
+        this.logger.log(`[SOCKET] Emitting presence update to socket=${socket.id}: ${JSON.stringify(update)}`);
+        socket.emit('presence', update);
+      }
+    });
+
+    // Stop watching when socket disconnects or unsubscribes
+    socket.once('disconnect', stopWatch);
+    socket.once('unsubscribe_presence', stopWatch);
+  }
   @SubscribeMessage('admin:sessions')
   handleAdminSessions(@ConnectedSocket() socket: Socket) {
     const all = getAllSessions().map((s) => s.getSummary());

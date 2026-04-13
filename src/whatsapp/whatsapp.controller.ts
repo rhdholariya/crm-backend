@@ -19,6 +19,7 @@ import * as multer from 'multer';
 import * as path from 'path';
 import type { Response } from 'express';
 import { WhatsAppService } from './whatsapp.service';
+import { findSession } from './whatsapp.session';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { AuthUser } from '../auth/entities/auth-user.entity';
@@ -145,7 +146,22 @@ export class WhatsAppController {
     return successResponse('Message sent');
   }
 
-  // ── Contacts ────────────────────────────────────────────────────────────────
+  // ── Presence ─────────────────────────────────────────────────────────────────
+
+  @Get('presence/:chatId')
+  async getPresence(
+    @CurrentUser() user: AuthUser,
+    @Param('chatId') chatId: string,
+  ) {
+    const decoded = decodeURIComponent(chatId);
+    this.logger.log(`[API] GET /presence/${decoded} → userId=${user.id}`);
+    const session = findSession(user.id, PROFILE_ID);
+    if (!session?.isConnected()) {
+      return successResponse('Presence', { chatId: decoded, isOnline: false, isTyping: false, lastSeen: null });
+    }
+    const presence = await session.getPresence(decoded);
+    return successResponse('Presence', presence ?? { chatId: decoded, isOnline: false, isTyping: false, lastSeen: null });
+  }
 
   @Get('contacts/search')
   async searchContacts(

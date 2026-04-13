@@ -141,14 +141,24 @@ export class WhatsAppSession {
   buildChatList(): ChatListItem[] {
     return Object.values(this.chatStore)
       .sort((a, b) => {
-        const aT = a.lastMessageTimestamp || a.messages[a.messages.length - 1]?.timestamp || 0;
-        const bT = b.lastMessageTimestamp || b.messages[b.messages.length - 1]?.timestamp || 0;
+        const aT =
+          a.lastMessageTimestamp ||
+          a.messages[a.messages.length - 1]?.timestamp ||
+          0;
+        const bT =
+          b.lastMessageTimestamp ||
+          b.messages[b.messages.length - 1]?.timestamp ||
+          0;
         return bT - aT;
       })
       .map((c) => {
         // Read avatar from cached file as base64 if available
         let avatarBase64: string | null = null;
-        const avatarPath = avatarFilePath(this.userId, this.profileId, c.chatId);
+        const avatarPath = avatarFilePath(
+          this.userId,
+          this.profileId,
+          c.chatId,
+        );
         if (fs.existsSync(avatarPath)) {
           try {
             const data = fs.readFileSync(avatarPath);
@@ -174,17 +184,24 @@ export class WhatsAppSession {
       // Stickers are handled separately — skip inline download
       if (msg.type === 'sticker') return null;
       // status@broadcast media uses a different decryption path
-      const isStatus = msg.from === 'status@broadcast' ||
+      const isStatus =
+        msg.from === 'status@broadcast' ||
         msg.id?._serialized?.includes('status@broadcast');
 
-      this.logger.log(`[MEDIA] Downloading msgId=${msg.id?._serialized} type=${msg.type} isStatus=${isStatus}`);
+      this.logger.log(
+        `[MEDIA] Downloading msgId=${msg.id?._serialized} type=${msg.type} isStatus=${isStatus}`,
+      );
 
       const media = await msg.downloadMedia();
       if (!media) {
-        this.logger.warn(`[MEDIA] downloadMedia() returned null for msgId=${msg.id?._serialized}`);
+        this.logger.warn(
+          `[MEDIA] downloadMedia() returned null for msgId=${msg.id?._serialized}`,
+        );
         return null;
       }
-      this.logger.log(`[MEDIA] Downloaded mimetype=${media.mimetype} size=${media.data?.length ?? 0}`);
+      this.logger.log(
+        `[MEDIA] Downloaded mimetype=${media.mimetype} size=${media.data?.length ?? 0}`,
+      );
       return {
         data: media.data,
         mimetype: media.mimetype,
@@ -235,8 +252,13 @@ export class WhatsAppSession {
       if (!this.client) return null;
 
       // Skip special chats
-      if (chatId === 'status@broadcast' || chatId === '0@c.us' ||
-          chatId.endsWith('@lid') || chatId.endsWith('@newsletter')) return null;
+      if (
+        chatId === 'status@broadcast' ||
+        chatId === '0@c.us' ||
+        chatId.endsWith('@lid') ||
+        chatId.endsWith('@newsletter')
+      )
+        return null;
 
       // Port of original Node.js getRealProfilePicUrl — tries multiple Store paths
       let picUrl: string | null = null;
@@ -246,7 +268,7 @@ export class WhatsAppSession {
             try {
               let retries = 0;
               while (!(window as any).Store && retries < 10) {
-                await new Promise(r => setTimeout(r, 500));
+                await new Promise((r) => setTimeout(r, 500));
                 retries++;
               }
               const S = (window as any).Store;
@@ -256,31 +278,45 @@ export class WhatsAppSession {
                 if (!obj) return null;
                 if (obj.eurl?.startsWith('http')) return obj.eurl;
                 if (obj.url?.startsWith('http')) return obj.url;
-                if (obj.img?.startsWith('http') || obj.img?.startsWith('data:')) return obj.img;
+                if (obj.img?.startsWith('http') || obj.img?.startsWith('data:'))
+                  return obj.img;
                 if (obj.rawObj) return extractUrl(obj.rawObj);
-                if (obj.profilePicThumbObj) return extractUrl(obj.profilePicThumbObj);
-                if (obj.attributes?.profilePicThumbObj) return extractUrl(obj.attributes.profilePicThumbObj);
+                if (obj.profilePicThumbObj)
+                  return extractUrl(obj.profilePicThumbObj);
+                if (obj.attributes?.profilePicThumbObj)
+                  return extractUrl(obj.attributes.profilePicThumbObj);
                 return null;
               }
 
               let url: string | null = null;
               if (S.ProfilePicThumb) {
                 const t = S.ProfilePicThumb.get(cid);
-                if (t) { url = extractUrl(t) || extractUrl(t.attributes); if (url) return { url }; }
+                if (t) {
+                  url = extractUrl(t) || extractUrl(t.attributes);
+                  if (url) return { url };
+                }
               }
               if (S.Chat) {
                 const t = S.Chat.get(cid);
-                if (t) { url = extractUrl(t.profilePicThumbObj); if (url) return { url }; }
+                if (t) {
+                  url = extractUrl(t.profilePicThumbObj);
+                  if (url) return { url };
+                }
               }
               if (S.Contact) {
                 const t = S.Contact.get(cid);
-                if (t) { url = extractUrl(t.profilePicThumbObj); if (url) return { url }; }
+                if (t) {
+                  url = extractUrl(t.profilePicThumbObj);
+                  if (url) return { url };
+                }
               }
               return { url: null };
-            } catch (_) { return { url: null }; }
+            } catch (_) {
+              return { url: null };
+            }
           }, chatId),
           new Promise<{ url: null }>((_, reject) =>
-            setTimeout(() => reject(new Error('timeout')), 15000)
+            setTimeout(() => reject(new Error('timeout')), 15000),
           ),
         ]);
         picUrl = (result as any)?.url || null;
@@ -288,7 +324,9 @@ export class WhatsAppSession {
 
       // Fallback to standard method
       if (!picUrl) {
-        try { picUrl = await this.client.getProfilePicUrl(chatId); } catch (_) {}
+        try {
+          picUrl = await this.client.getProfilePicUrl(chatId);
+        } catch (_) {}
       }
 
       if (!picUrl) return null;
@@ -305,25 +343,33 @@ export class WhatsAppSession {
       await new Promise<void>((resolve, reject) => {
         const lib = picUrl!.startsWith('https') ? https : http;
         const fileStream = fs.createWriteStream(filePath);
-        const req = lib.get(picUrl, {
-          headers: {
-            'User-Agent': 'Mozilla/5.0',
-            'Accept': 'image/*,*/*',
-            'Origin': 'https://web.whatsapp.com',
-            'Referer': 'https://web.whatsapp.com/',
+        const req = lib.get(
+          picUrl,
+          {
+            headers: {
+              'User-Agent': 'Mozilla/5.0',
+              Accept: 'image/*,*/*',
+              Origin: 'https://web.whatsapp.com',
+              Referer: 'https://web.whatsapp.com/',
+            },
           },
-        }, (res: any) => {
-          if (res.statusCode !== 200) {
-            res.resume(); fileStream.destroy();
-            fs.unlink(filePath, () => {});
-            return reject(new Error(`HTTP ${res.statusCode}`));
-          }
-          res.pipe(fileStream);
-          fileStream.on('finish', resolve);
-          fileStream.on('error', reject);
-        });
+          (res: any) => {
+            if (res.statusCode !== 200) {
+              res.resume();
+              fileStream.destroy();
+              fs.unlink(filePath, () => {});
+              return reject(new Error(`HTTP ${res.statusCode}`));
+            }
+            res.pipe(fileStream);
+            fileStream.on('finish', resolve);
+            fileStream.on('error', reject);
+          },
+        );
         req.on('error', reject);
-        setTimeout(() => { req.destroy(); reject(new Error('timeout')); }, 15000);
+        setTimeout(() => {
+          req.destroy();
+          reject(new Error('timeout'));
+        }, 15000);
       });
       return `/api/whatsapp/avatar/${encodeURIComponent(chatId)}`;
     } catch (_) {
@@ -390,7 +436,8 @@ export class WhatsAppSession {
       // Enable full history sync so older messages are available
       webVersionCache: {
         type: 'remote',
-        remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.2412.54.html',
+        remotePath:
+          'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.2412.54.html',
       },
     });
 
@@ -507,7 +554,9 @@ export class WhatsAppSession {
         for (let i = 0; i < chats.length; i += BATCH) {
           // Stop processing if client was destroyed (e.g. logout from phone)
           if (!this.client || !this.isConnected()) {
-            this.logger.warn(`[CHATS] Client disconnected during load — stopping`);
+            this.logger.warn(
+              `[CHATS] Client disconnected during load — stopping`,
+            );
             break;
           }
           const batch = chats.slice(i, i + BATCH);
@@ -515,7 +564,8 @@ export class WhatsAppSession {
             batch.map(async (chat: any) => {
               const chatId = chat.id._serialized;
               const isGroup = chat.isGroup;
-              const isChannel = chatId.endsWith('@newsletter') || chatId === 'status@broadcast';
+              const isChannel =
+                chatId.endsWith('@newsletter') || chatId === 'status@broadcast';
               const contactName = chat.name || chatId.replace(/@.+/, '');
               const contactNumber = chatId.replace(/@.+/, '');
               if (this.chatStore[chatId]) {
@@ -524,9 +574,16 @@ export class WhatsAppSession {
                 // Update lastMessage from the chat object directly
                 if (chat.lastMessage) {
                   try {
-                    const lastMsg = await this.formatMessage(chat.lastMessage, true);
+                    const lastMsg = await this.formatMessage(
+                      chat.lastMessage,
+                      true,
+                    );
                     const stored = this.chatStore[chatId];
-                    if (!stored.messages.length || stored.messages[stored.messages.length - 1]?.id !== lastMsg.id) {
+                    if (
+                      !stored.messages.length ||
+                      stored.messages[stored.messages.length - 1]?.id !==
+                        lastMsg.id
+                    ) {
                       stored.messages = [lastMsg];
                     }
                   } catch (_) {}
@@ -536,16 +593,24 @@ export class WhatsAppSession {
                 // Get last message from chat object (always available, no extra fetch needed)
                 if (chat.lastMessage) {
                   try {
-                    const lastMsg = await this.formatMessage(chat.lastMessage, true);
+                    const lastMsg = await this.formatMessage(
+                      chat.lastMessage,
+                      true,
+                    );
                     lastMsgArr = [lastMsg];
                   } catch (_) {}
                 }
                 this.chatStore[chatId] = {
                   chatId,
-                  contact: { name: contactName, number: contactNumber, avatar: null },
+                  contact: {
+                    name: contactName,
+                    number: contactNumber,
+                    avatar: null,
+                  },
                   messages: lastMsgArr,
                   unreadCount: chat.unreadCount || 0,
-                  isGroup, isChannel,
+                  isGroup,
+                  isChannel,
                   lastMessageTimestamp: chat.timestamp || chat.t || 0,
                   _previewOnly: true,
                 };
@@ -569,12 +634,13 @@ export class WhatsAppSession {
           percent: 100,
         });
         this.broadcast('chats', this.buildChatList());
-        this.logger.log(`[CHATS] Loaded ${loaded} chats for userId=${this.userId}`);
+        this.logger.log(
+          `[CHATS] Loaded ${loaded} chats for userId=${this.userId}`,
+        );
         debouncedSave(this.userId, this.profileId, this.chatStore);
 
         // ── Fetch avatars in background after chats are loaded ───────────────
         this.fetchAvatarsInBackground();
-
       } catch (err: any) {
         const isContextDestroyed =
           err?.message?.includes('Execution context was destroyed') ||
@@ -613,21 +679,31 @@ export class WhatsAppSession {
     this.client.on('message', async (msg: any) => {
       if (msg.fromMe) return;
       const chatId = msg.from;
-      this.logger.log(`[MSG IN] from=${chatId} body="${(msg.body || '').slice(0, 60)}" type=${msg.type}`);
+      this.logger.log(
+        `[MSG IN] from=${chatId} body="${(msg.body || '').slice(0, 60)}" type=${msg.type}`,
+      );
 
       // ── Handle status@broadcast separately ──────────────────────────────
       if (chatId === 'status@broadcast') {
         const formatted = await this.formatMessage(msg, true);
-        if (msg.hasMedia) (formatted as any).mediaUrl = `/api/whatsapp/media/${encodeURIComponent(msg.id._serialized)}`;
+        if (msg.hasMedia)
+          (formatted as any).mediaUrl =
+            `/api/whatsapp/media/${encodeURIComponent(msg.id._serialized)}`;
         if (!this.chatStore['status@broadcast']) {
           this.chatStore['status@broadcast'] = {
-            chatId: 'status@broadcast', contact: { name: 'Status Updates', number: '', avatar: null },
-            messages: [], unreadCount: 0, isGroup: false, isChannel: true,
+            chatId: 'status@broadcast',
+            contact: { name: 'Status Updates', number: '', avatar: null },
+            messages: [],
+            unreadCount: 0,
+            isGroup: false,
+            isChannel: true,
           };
         }
         this.chatStore['status@broadcast'].messages.push(formatted);
         // Only broadcast to sockets that subscribed to status
-        const hasStatusViewers = Object.values(this.activeViewers).some(v => v === 'status@broadcast');
+        const hasStatusViewers = Object.values(this.activeViewers).some(
+          (v) => v === 'status@broadcast',
+        );
         if (hasStatusViewers) {
           this.broadcast('status_message', { message: formatted });
         }
@@ -770,6 +846,73 @@ export class WhatsAppSession {
       } catch (_) {}
     }, 30000);
 
+    // ── Presence: online/offline/typing status ───────────────────────────────
+    this.client.on(
+      'contact_changed' as any,
+      async (msg: any, oldId: string, newId: string, isContact: boolean) => {
+        try {
+          this.logger.log(
+            `[PRESENCE] contact_changed oldId=${oldId} newId=${newId}`,
+          );
+          this.broadcast('contact_changed', { oldId, newId, isContact });
+        } catch (_) {}
+      },
+    );
+
+    // Subscribe to presence updates for all contacts
+    this.client.on('ready', async () => {
+      // Already handled above — this is just for presence subscription
+    });
+
+    // Presence update — online/offline/typing
+    this.client.on('change_state' as any, (state: any) => {
+      this.logger.log(`[PRESENCE] change_state: ${state}`);
+    });
+
+    // Contact online/offline
+    (this.client as any).pupPage?.on('framenavigated', () => {});
+
+    // Subscribe to presence via pupPage after ready
+    this.client.on('ready', async () => {
+      try {
+        await (this.client as any).pupPage.evaluate(() => {
+          // Listen for presence updates from WhatsApp Web internals
+          const origPresence = (window as any).Store?.Presence;
+          if (origPresence) {
+            origPresence.on?.('change', (presence: any) => {
+              (window as any).__presenceUpdate = {
+                chatId: presence.id?._serialized,
+                isOnline: presence.isOnline,
+                isTyping: presence.chatstate === 'composing',
+                lastSeen: presence.t,
+              };
+            });
+          }
+        });
+      } catch (_) {}
+    });
+
+    // Poll presence updates every 2s and broadcast
+    const presenceTimer = setInterval(async () => {
+      if (!this.isConnected() || !this.client) {
+        clearInterval(presenceTimer);
+        return;
+      }
+      try {
+        const update = await (this.client as any).pupPage.evaluate(() => {
+          const u = (window as any).__presenceUpdate;
+          (window as any).__presenceUpdate = null;
+          return u;
+        });
+        if (update?.chatId) {
+          this.logger.log(
+            `[PRESENCE] chatId=${update.chatId} online=${update.isOnline} typing=${update.isTyping}`,
+          );
+          this.broadcast('presence', update);
+        }
+      } catch (_) {}
+    }, 2000);
+
     this.client.initialize().catch((err: any) => {
       this.logger.error(`[INIT] initialize() failed: ${err.message}`);
       this.status = 'disconnected';
@@ -824,14 +967,218 @@ export class WhatsAppSession {
   isConnected(): boolean {
     return this.status === 'connected' && !!this.client;
   }
+
   formatNumber(to: string): string {
     return to.includes('@') ? to : `${to.replace(/\D/g, '')}@c.us`;
+  }
+
+  // ── Get presence for a specific contact ──────────────────────────────────
+  async getPresence(
+    chatId: string,
+  ): Promise<{
+    chatId: string;
+    isOnline: boolean;
+    isTyping: boolean;
+    lastSeen: number | null;
+  } | null> {
+    if (!this.isConnected()) return null;
+    try {
+      const result = await (this.client as any).pupPage.evaluate(
+        async (cid: string) => {
+          try {
+            const S = (window as any).Store;
+            if (!S) return null;
+
+            // Step 1: Subscribe to presence for this contact
+            const wid = S.WidFactory?.createWid(cid);
+            if (wid) {
+              try {
+                await S.PresenceUtils?.subscribe(wid);
+              } catch (_) {}
+              try {
+                await S.Presence?.subscribe(wid);
+              } catch (_) {}
+            }
+
+            // Step 2: Wait for WhatsApp to push presence data (up to 3s)
+            let presence: any = null;
+            for (let i = 0; i < 6; i++) {
+              await new Promise((r) => setTimeout(r, 500));
+              presence = S.Presence?.get(cid) || S.PresenceStore?.get(cid);
+              if (presence?.isOnline !== undefined || presence?.t) break;
+            }
+
+            if (presence) {
+              return {
+                chatId: cid,
+                isOnline: (presence as any).isOnline ?? false,
+                isTyping:
+                  (presence as any).chatstate === 'composing' ||
+                  (presence as any).type === 'composing',
+                lastSeen:
+                  (presence as any).t || (presence as any).lastSeen || null,
+              };
+            }
+
+            // Step 3: Fallback — read from Contact store
+            const contact: any = S.Contact?.get(cid);
+            if (contact) {
+              return {
+                chatId: cid,
+                isOnline: contact.isOnline ?? false,
+                isTyping: false,
+                lastSeen: contact.lastSeen || null,
+              };
+            }
+            return {
+              chatId: cid,
+              isOnline: false,
+              isTyping: false,
+              lastSeen: null,
+            };
+          } catch (e: any) {
+            return {
+              chatId: cid,
+              isOnline: false,
+              isTyping: false,
+              lastSeen: null,
+            };
+          }
+        },
+        chatId,
+      );
+
+      if (result) {
+        this.logger.log(
+          `[PRESENCE] chatId=${chatId} online=${result.isOnline} typing=${result.isTyping} lastSeen=${result.lastSeen}`,
+        );
+      }
+      return result;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  // ── Start real-time presence listener for a contact ───────────────────────
+  async watchPresence(
+    chatId: string,
+    onUpdate: (data: any) => void,
+  ): Promise<() => void> {
+    if (!this.isConnected()) return () => {};
+
+    let active = true;
+
+    // Subscribe and set up event listeners
+    try {
+      await (this.client as any).pupPage.evaluate(async (cid: string) => {
+        const S = (window as any).Store;
+        const wid = S?.WidFactory?.createWid(cid);
+
+        // Subscribe to presence updates
+        if (wid) {
+          try {
+            await S?.PresenceUtils?.subscribe(wid);
+          } catch (_) {}
+          try {
+            await S?.Presence?.subscribe(wid);
+          } catch (_) {}
+        }
+
+        // Set up event listeners on Presence store
+        if (S?.Presence) {
+          try {
+            S.Presence.on('change', (presence: any) => {
+              if (presence?.id?.user === cid.split('@')[0]) {
+                (window as any).__presenceChanged = true;
+              }
+            });
+          } catch (_) {}
+        }
+
+        // Initialize watcher state
+        (window as any).__presenceWatchers =
+          (window as any).__presenceWatchers || {};
+        (window as any).__presenceWatchers[cid] = {
+          isOnline: null,
+          isTyping: null,
+          lastSeen: null,
+          emitted: false,
+        };
+      }, chatId);
+    } catch (_) {}
+
+    // Poll every 1.5s for changes (more frequent for better responsiveness)
+    const poll = async () => {
+      while (active && this.isConnected()) {
+        try {
+          const update = await (this.client as any).pupPage.evaluate(
+            (cid: string) => {
+              const S = (window as any).Store;
+              const presence =
+                S?.Presence?.get(cid) || S?.PresenceStore?.get(cid);
+              const contact = S?.Contact?.get(cid);
+              const watchers = (window as any).__presenceWatchers || {};
+              const prev = watchers[cid] || {};
+
+              const isOnline =
+                (presence as any)?.isOnline ??
+                (contact as any)?.isOnline ??
+                false;
+              const isTyping =
+                (presence as any)?.chatstate === 'composing' ||
+                (presence as any)?.type === 'composing';
+              const lastSeen =
+                (presence as any)?.t ||
+                (presence as any)?.lastSeen ||
+                (contact as any)?.lastSeen ||
+                null;
+
+              // Emit initial state OR if changed
+              const hasChanged =
+                prev.isOnline !== isOnline ||
+                prev.isTyping !== isTyping ||
+                prev.lastSeen !== lastSeen;
+              const shouldEmit = !prev.emitted || hasChanged;
+
+              if (shouldEmit) {
+                watchers[cid] = { isOnline, isTyping, lastSeen, emitted: true };
+                (window as any).__presenceChanged = false;
+                return {
+                  chatId: cid,
+                  isOnline,
+                  isTyping,
+                  lastSeen,
+                  changed: true,
+                };
+              }
+              return null;
+            },
+            chatId,
+          );
+
+          if (update?.changed) {
+            this.logger.log(
+              `[PRESENCE] Update chatId=${chatId} online=${update.isOnline} typing=${update.isTyping}`,
+            );
+            onUpdate(update);
+          }
+        } catch (_) {}
+        await new Promise((r) => setTimeout(r, 1500));
+      }
+    };
+
+    poll();
+    return () => {
+      active = false;
+    };
   }
 
   // ── Fetch avatars for all chats in background ─────────────────────────────
   private async fetchAvatarsInBackground() {
     const chatIds = Object.keys(this.chatStore);
-    this.logger.log(`[AVATAR] Starting background fetch for ${chatIds.length} chats`);
+    this.logger.log(
+      `[AVATAR] Starting background fetch for ${chatIds.length} chats`,
+    );
     const BATCH = 5;
     let updated = 0;
     let failed = 0;
@@ -840,32 +1187,51 @@ export class WhatsAppSession {
     for (let i = 0; i < chatIds.length; i += BATCH) {
       if (!this.isConnected()) break;
       const batch = chatIds.slice(i, i + BATCH);
-      await Promise.all(batch.map(async (chatId) => {
-        try {
-          // Skip channels and broadcast
-          if (chatId === 'status@broadcast' || chatId.endsWith('@newsletter')) { skipped++; return; }
-          // Skip if already cached
-          const avatarPath = avatarFilePath(this.userId, this.profileId, chatId);
-          if (fs.existsSync(avatarPath)) { skipped++; return; }
+      await Promise.all(
+        batch.map(async (chatId) => {
+          try {
+            // Skip channels and broadcast
+            if (
+              chatId === 'status@broadcast' ||
+              chatId.endsWith('@newsletter')
+            ) {
+              skipped++;
+              return;
+            }
+            // Skip if already cached
+            const avatarPath = avatarFilePath(
+              this.userId,
+              this.profileId,
+              chatId,
+            );
+            if (fs.existsSync(avatarPath)) {
+              skipped++;
+              return;
+            }
 
-          const avatarUrl = await this.cacheAvatar(chatId);
-          if (avatarUrl && this.chatStore[chatId]) {
-            this.chatStore[chatId].contact.avatar = avatarUrl;
-            updated++;
-          } else {
+            const avatarUrl = await this.cacheAvatar(chatId);
+            if (avatarUrl && this.chatStore[chatId]) {
+              this.chatStore[chatId].contact.avatar = avatarUrl;
+              updated++;
+            } else {
+              failed++;
+            }
+          } catch (_) {
             failed++;
           }
-        } catch (_) { failed++; }
-      }));
+        }),
+      );
 
       if (updated > 0) {
         this.broadcast('chats', this.buildChatList());
         debouncedSave(this.userId, this.profileId, this.chatStore);
         updated = 0;
       }
-      await new Promise(r => setTimeout(r, 300));
+      await new Promise((r) => setTimeout(r, 300));
     }
-    this.logger.log(`[AVATAR] Background fetch complete — skipped=${skipped} failed=${failed}`);
+    this.logger.log(
+      `[AVATAR] Background fetch complete — skipped=${skipped} failed=${failed}`,
+    );
   }
 
   hasSession(): boolean {

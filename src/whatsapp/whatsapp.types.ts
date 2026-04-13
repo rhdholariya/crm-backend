@@ -48,6 +48,7 @@ declare global {
       WidFactory?: { createWid: (id: string) => any };
       HistorySync?: { sendPeerDataOperationRequest: (type: number, data: any) => Promise<any> };
       ProfilePic?: { profilePicFind: (wid: any) => Promise<{ eurl?: string; url?: string } | null> };
+      SendSeen?: { sendSeen: (chat: any, msg: any, isGroup: boolean) => Promise<void> };
     };
     WWebJS?: {
       downloadMedia: (msg: any) => Promise<{ data: string; mimetype: string; filename: string | null } | null>;

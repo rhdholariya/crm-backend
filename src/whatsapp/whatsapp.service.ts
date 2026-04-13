@@ -183,10 +183,39 @@ export class WhatsAppService implements OnModuleInit {
   async markRead(userId: number, profileId: string, chatId: string) {
     const s = findSession(userId, profileId);
     if (!s) return;
+
+    // Update local unread count immediately
     if (s.chatStore[chatId]) s.chatStore[chatId].unreadCount = 0;
+
     if (s.isConnected()) {
-      try { const chat = await s.client!.getChatById(chatId); await chat.sendSeen(); } catch (_) {}
+      try {
+        // Use pupPage directly — fastest, no getChatById/waitForChatLoading issue
+        const result = await (s.client as any).pupPage.evaluate(async (cid: string) => {
+          try {
+            const chat = window.Store?.Chat?.get(cid)
+              || await window.Store?.Chat?.find?.(cid);
+            if (!chat) return false;
+            await (window as any).Store?.SendSeen?.sendSeen(chat, chat.msgs?.last, false);
+            return true;
+          } catch (_) { return false; }
+        }, chatId);
+
+        if (result) {
+          this.logger.log(`[READ] ✅ sendSeen via Store for chatId=${chatId} userId=${userId}`);
+        } else {
+          // Fallback to getChats()
+          const allChats = await s.client!.getChats();
+          const waChat = allChats.find((c: any) => c.id._serialized === chatId);
+          if (waChat) {
+            await waChat.sendSeen();
+            this.logger.log(`[READ] ✅ sendSeen via getChats for chatId=${chatId}`);
+          }
+        }
+      } catch (err: any) {
+        this.logger.error(`[READ] sendSeen failed: ${err.message}`);
+      }
     }
+
     s.broadcast('chats', s.buildChatList());
   }
 
