@@ -17,7 +17,8 @@ export class ChatCustomizationService {
   ) {}
 
   async get(userId: number): Promise<ChatCustomization | null> {
-    return this.repo.findOne({ where: { userId } });
+    const record = await this.repo.findOne({ where: { userId } });
+    return record ? this.withImageUrl(record) : null;
   }
 
   async upsert(
@@ -47,11 +48,13 @@ export class ChatCustomizationService {
     if (dto.backgroundType === BackgroundType.IMAGE && file) {
       // remove old image
       if (record.backgroundImage) this.deleteFile(record.backgroundImage);
+      // store as relative path from cwd e.g. uploads/chat-bg/bg-123.jpg
       record.backgroundImage = file.path.replace(/\\/g, '/');
       record.backgroundColor = null;
     }
 
-    return this.repo.save(record);
+    const saved = await this.repo.save(record);
+    return this.withImageUrl(saved);
   }
 
   async delete(userId: number): Promise<void> {
@@ -59,6 +62,19 @@ export class ChatCustomizationService {
     if (!record) throw new NotFoundException('No customization found');
     if (record.backgroundImage) this.deleteFile(record.backgroundImage);
     await this.repo.remove(record);
+  }
+
+  /** Converts stored file path → public URL accessible by frontend */
+  private withImageUrl(record: ChatCustomization): ChatCustomization {
+    if (record.backgroundImage) {
+      // Normalize to forward slashes and strip leading ./
+      const normalized = record.backgroundImage.replace(/\\/g, '/').replace(/^\.\//, '');
+      // Result: /uploads/chat-bg/bg-123.jpg
+      (record as any).backgroundImageUrl = `/${normalized}`;
+    } else {
+      (record as any).backgroundImageUrl = null;
+    }
+    return record;
   }
 
   private deleteFile(filePath: string) {
