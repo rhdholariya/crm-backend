@@ -88,6 +88,14 @@ export class PaymentsController {
     return successResponse('Success', result);
   }
 
+  // Billing portal — manage subscription, update card, cancel, etc.
+  @UseGuards(JwtAuthGuard)
+  @Post('billing-portal')
+  async billingPortal(@CurrentUser() user: AuthUser) {
+    const result = await this.paymentsService.getBillingPortalUrl(user.id);
+    return successResponse('Billing portal URL generated', result);
+  }
+
   // Active subscription
   @UseGuards(JwtAuthGuard)
   @Get('my-subscription')
@@ -95,6 +103,9 @@ export class PaymentsController {
     const subscription = await this.paymentsService.getActiveSubscription(
       user.id,
     );
+    if (!subscription) {
+      return successResponse('No active plan', null);
+    }
     return successResponse('Success', subscription);
   }
 }

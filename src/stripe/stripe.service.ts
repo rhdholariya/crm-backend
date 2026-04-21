@@ -68,7 +68,7 @@ export class StripeService {
     return stripe.checkout.sessions.create({
       payment_method_types: ['card'],
       mode: 'payment',
-      customer: customerId,         // ✅ use customer id, not customer_email
+      customer: customerId, // ✅ use customer id, not customer_email
       line_items: [
         {
           price_data: {
@@ -135,7 +135,7 @@ export class StripeService {
     return stripe.checkout.sessions.create({
       payment_method_types: ['card'],
       mode: 'subscription',
-      customer: customerId,         // ✅ use customer id, not customer_email
+      customer: customerId, // ✅ use customer id, not customer_email
       line_items: [{ price: params.stripePriceId, quantity: 1 }],
       metadata: {
         planId: params.planId.toString(),
@@ -190,10 +190,10 @@ export class StripeService {
   }
 
   async createStripePrice({
-                            productId,
-                            price,
-                            interval,
-                          }: {
+    productId,
+    price,
+    interval,
+  }: {
     productId: string;
     price: number;
     interval: 'day' | 'week' | 'month' | 'year';
@@ -223,5 +223,16 @@ export class StripeService {
       signature,
       process.env.STRIPE_WEBHOOK_SECRET ?? '',
     );
+  }
+
+  async createBillingPortalSession(
+    stripeCustomerId: string,
+    returnUrl: string,
+  ): Promise<Stripe.BillingPortal.Session> {
+    const stripe = await this.getClient();
+    return stripe.billingPortal.sessions.create({
+      customer: stripeCustomerId,
+      return_url: returnUrl,
+    });
   }
 }

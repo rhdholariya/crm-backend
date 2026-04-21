@@ -1,5 +1,5 @@
 // payments/payments.service.ts
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Payment, PaymentStatus, PaymentType } from './entities/payment.entity';
@@ -14,6 +14,8 @@ import { UsersService } from '../users/users.service';
 
 @Injectable()
 export class PaymentsService {
+  private readonly logger = new Logger(PaymentsService.name);
+
   constructor(
     @InjectRepository(Payment)
     private paymentRepo: Repository<Payment>,
@@ -616,19 +618,171 @@ export class PaymentsService {
       }
     }
 
+    // ─── Subscription updated (plan change, cancel-at-period-end, reactivate) ─
+    if (event.type === 'customer.subscription.updated') {
+      const subscription = event.data.object as any;
+      const subscriptionId: string = subscription.id;
+      this.logger.log(
+        `[subscription.updated] subscriptionId=${subscriptionId} status=${subscription.status} cancel_at_period_end=${subscription.cancel_at_period_end}`,
+      );
+
+      try {
+        // Resolve userId/planId from subscription metadata
+        let resolvedUserId = this.safeInt(subscription.metadata?.userId);
+        let resolvedPlanId = this.safeInt(subscription.metadata?.planId);
+
+        // Fallback: look up from DB via stripeSubscriptionId
+        if (!resolvedUserId || !resolvedPlanId) {
+          const existing = await this.paymentRepo.findOne({
+            where: { stripeSubscriptionId: subscriptionId },
+          });
+          if (existing) {
+            resolvedUserId = existing.userId;
+            resolvedPlanId = existing.planId;
+          }
+        }
+
+        const newStatus: SubscriptionStatus =
+          subscription.status === 'active'
+            ? SubscriptionStatus.ACTIVE
+            : subscription.status === 'past_due'
+              ? SubscriptionStatus.PAST_DUE
+              : subscription.status === 'canceled'
+                ? SubscriptionStatus.CANCELLED
+                : SubscriptionStatus.EXPIRED;
+
+        const currentPeriodStart = new Date(
+          subscription.current_period_start * 1000,
+        );
+        const currentPeriodEnd = new Date(
+          subscription.current_period_end * 1000,
+        );
+        const cancelledAt =
+          subscription.status === 'canceled' ||
+          subscription.cancel_at_period_end
+            ? new Date()
+            : undefined;
+
+        // Update user_subscriptions
+        await this.subscriptionRepo.update(
+          { stripeSubscriptionId: subscriptionId },
+          {
+            status: newStatus,
+            currentPeriodStart,
+            currentPeriodEnd,
+            ...(cancelledAt && { cancelledAt }),
+          },
+        );
+        this.logger.log(
+          `[subscription.updated] ✅ user_subscriptions updated → status=${newStatus}`,
+        );
+
+        // Update payments row
+        await this.paymentRepo.update(
+          { stripeSubscriptionId: subscriptionId },
+          {
+            status:
+              newStatus === SubscriptionStatus.CANCELLED
+                ? PaymentStatus.CANCELLED
+                : newStatus === SubscriptionStatus.PAST_DUE
+                  ? PaymentStatus.FAILED
+                  : PaymentStatus.SUCCESS,
+            currentPeriodEnd,
+          },
+        );
+        this.logger.log(`[subscription.updated] ✅ payments updated`);
+
+        // Sync user activePlanId — clear if cancelled/expired or cancel_at_period_end
+        if (resolvedUserId) {
+          if (
+            newStatus === SubscriptionStatus.CANCELLED ||
+            newStatus === SubscriptionStatus.EXPIRED ||
+            subscription.cancel_at_period_end
+          ) {
+            await this.usersService.updateSubscriptionStatus(
+              resolvedUserId,
+              null,
+            );
+            this.logger.log(
+              `[subscription.updated] ✅ users.activePlanId cleared → userId=${resolvedUserId}`,
+            );
+          } else if (resolvedPlanId) {
+            await this.usersService.updateSubscriptionStatus(
+              resolvedUserId,
+              resolvedPlanId,
+            );
+            this.logger.log(
+              `[subscription.updated] ✅ users.activePlanId set → userId=${resolvedUserId} planId=${resolvedPlanId}`,
+            );
+          }
+        }
+      } catch (err) {
+        console.error(`[customer.subscription.updated] ❌ ERROR:`, err);
+      }
+    }
+
     // ─── Subscription cancelled ───────────────────────────────────────────
     if (event.type === 'customer.subscription.deleted') {
       const subscription = event.data.object as any;
+      this.logger.log(
+        `[subscription.deleted] subscriptionId=${subscription.id} customerId=${subscription.customer}`,
+      );
 
       await this.paymentRepo.update(
         { stripeSubscriptionId: subscription.id },
         { status: PaymentStatus.CANCELLED },
       );
+      this.logger.log(`[subscription.deleted] ✅ payments updated → CANCELLED`);
 
       await this.subscriptionRepo.update(
         { stripeSubscriptionId: subscription.id },
         { status: SubscriptionStatus.CANCELLED, cancelledAt: new Date() },
       );
+      this.logger.log(
+        `[subscription.deleted] ✅ user_subscriptions updated → CANCELLED`,
+      );
+
+      // Clear activePlanId on the user
+      const userId = this.safeInt(subscription.metadata?.userId);
+      if (userId) {
+        await this.usersService.updateSubscriptionStatus(userId, null);
+        this.logger.log(
+          `[subscription.deleted] ✅ users.activePlanId cleared → userId=${userId}`,
+        );
+      } else {
+        // fallback 1: resolve userId from payment row via subscriptionId
+        let resolvedUserId: number | null = null;
+
+        const payment = await this.paymentRepo.findOne({
+          where: { stripeSubscriptionId: subscription.id },
+          order: { id: 'DESC' },
+        });
+        if (payment) {
+          resolvedUserId = payment.userId;
+        }
+
+        // fallback 2: resolve via stripeCustomerId on user table
+        if (!resolvedUserId && subscription.customer) {
+          const userByCustomer = await this.usersService.findByStripeCustomerId(
+            subscription.customer,
+          );
+          if (userByCustomer) resolvedUserId = userByCustomer.id;
+        }
+
+        if (resolvedUserId) {
+          await this.usersService.updateSubscriptionStatus(
+            resolvedUserId,
+            null,
+          );
+          this.logger.log(
+            `[subscription.deleted] ✅ users.activePlanId cleared via fallback → userId=${resolvedUserId}`,
+          );
+        } else {
+          this.logger.warn(
+            `[subscription.deleted] ⚠️ Could not resolve userId — activePlanId not cleared`,
+          );
+        }
+      }
     }
 
     // ─── Session expired ──────────────────────────────────────────────────
@@ -676,12 +830,16 @@ export class PaymentsService {
   }
 
   async getActiveSubscription(userId: number) {
-    const subscription = await this.subscriptionRepo.findOne({
-      where: { userId, status: SubscriptionStatus.ACTIVE },
-    });
+    const subscription = await this.subscriptionRepo
+      .createQueryBuilder('sub')
+      .where('sub.userId = :userId', { userId })
+      .andWhere('sub.status = :status', { status: SubscriptionStatus.ACTIVE })
+      .andWhere('sub.cancelledAt IS NULL')
+      .getOne();
 
-    if (!subscription)
-      throw new NotFoundException('No active subscription found');
+    if (!subscription) {
+      return null;
+    }
     return subscription;
   }
 
@@ -691,5 +849,20 @@ export class PaymentsService {
 
   async getUserInvoices(userId: number) {
     return this.invoiceRepo.find({ where: { userId } });
+  }
+
+  async getBillingPortalUrl(userId: number): Promise<{ url: string }> {
+    const user = await this.usersService.findOne(userId);
+    if (!user?.stripeCustomerId) {
+      throw new NotFoundException('No Stripe customer found for this user');
+    }
+
+    const returnUrl = `${process.env.FRONTEND_URL}/subscriptions`;
+    const session = await this.stripeService.createBillingPortalSession(
+      user.stripeCustomerId,
+      returnUrl,
+    );
+
+    return { url: session.url };
   }
 }

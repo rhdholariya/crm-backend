@@ -34,12 +34,21 @@ export class ContactsController {
     @CurrentUser() user: AuthUser,
     @Query('page') page = 1,
     @Query('limit') limit = 10,
+    @Query('search') search?: string,
+    @Query('tagIds') tagIds?: string,
   ) {
+    const parsedTagIds = tagIds
+      ? tagIds.split(',').map((id) => Number(id))
+      : [];
+
     const result = await this.contactsService.findAll(
       user.id,
       Number(page),
       Number(limit),
+      search,
+      parsedTagIds,
     );
+
     return successResponse('Contacts fetched successfully', result);
   }
 

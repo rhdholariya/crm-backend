@@ -150,4 +150,8 @@ export class UsersService {
   ): Promise<void> {
     await this.repo.update(userId, { activePlanId });
   }
+
+  async findByStripeCustomerId(stripeCustomerId: string) {
+    return this.repo.findOne({ where: { stripeCustomerId } });
+  }
 }

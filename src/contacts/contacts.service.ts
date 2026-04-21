@@ -39,14 +39,53 @@ export class ContactsService {
     return this.contactRepo.save(contact);
   }
 
-  async findAll(userId: number, page = 1, limit = 10) {
-    const [data, total] = await this.contactRepo.findAndCount({
-      where: { userId },
-      order: { createdAt: 'DESC' },
-      skip: (page - 1) * limit,
-      take: limit,
-    });
-    return { total, page, limit, totalPages: Math.ceil(total / limit), data };
+  async findAll(
+    userId: number,
+    page = 1,
+    limit = 10,
+    search?: string,
+    tagIds?: number[],
+  ) {
+    const qb = this.contactRepo
+      .createQueryBuilder('contact')
+
+      // ✅ Join for filtering (NO select)
+      .leftJoin('contact.tags', 'filterTag')
+
+      // ✅ Join for fetching ALL tags
+      .leftJoinAndSelect('contact.tags', 'tag')
+
+      .where('contact.userId = :userId', { userId });
+
+    // ✅ Filter by tag
+    if (tagIds?.length) {
+      qb.andWhere('filterTag.id IN (:...tagIds)', { tagIds });
+    }
+
+    // ✅ Search
+    if (search) {
+      qb.andWhere(
+        `(contact.name ILIKE :search 
+        OR contact.email ILIKE :search 
+        OR contact.phoneNumber ILIKE :search)`,
+        { search: `%${search}%` },
+      );
+    }
+
+    qb.orderBy('contact.createdAt', 'DESC')
+      .skip((page - 1) * limit)
+      .take(limit)
+      .distinct(true); // ⚠️ VERY IMPORTANT
+
+    const [data, total] = await qb.getManyAndCount();
+
+    return {
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+      data,
+    };
   }
 
   async findOne(userId: number, id: number): Promise<Contact> {

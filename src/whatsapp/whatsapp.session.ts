@@ -64,7 +64,7 @@ function saveChatStore(
         isGroup: chat.isGroup,
         isChannel: chat.isChannel,
         unreadCount: chat.unreadCount || 0,
-        messages: (chat.messages || []).slice(-100).map((m) => ({
+        messages: (chat.messages || []).slice(-200).map((m) => ({
           id: m.id,
           from: m.from,
           body: m.body,
@@ -550,7 +550,7 @@ export class WhatsAppSession {
           percent: 0,
         });
         let loaded = 0;
-        const BATCH = 5; // smaller batch since we fetch more messages per chat
+        const BATCH = 3; // smaller batch for better performance
         for (let i = 0; i < chats.length; i += BATCH) {
           // Stop processing if client was destroyed (e.g. logout from phone)
           if (!this.client || !this.isConnected()) {
@@ -566,55 +566,111 @@ export class WhatsAppSession {
               const isGroup = chat.isGroup;
               const isChannel =
                 chatId.endsWith('@newsletter') || chatId === 'status@broadcast';
-              const contactName = chat.name || chatId.replace(/@.+/, '');
+              let contactName = chat.name || chatId.replace(/@.+/, '');
               const contactNumber = chatId.replace(/@.+/, '');
-              if (this.chatStore[chatId]) {
-                this.chatStore[chatId].contact.name = contactName;
-                this.chatStore[chatId].unreadCount = chat.unreadCount || 0;
-                // Update lastMessage from the chat object directly
-                if (chat.lastMessage) {
-                  try {
-                    const lastMsg = await this.formatMessage(
-                      chat.lastMessage,
-                      true,
-                    );
-                    const stored = this.chatStore[chatId];
-                    if (
-                      !stored.messages.length ||
-                      stored.messages[stored.messages.length - 1]?.id !==
-                        lastMsg.id
-                    ) {
-                      stored.messages = [lastMsg];
-                    }
-                  } catch (_) {}
-                }
-              } else {
-                let lastMsgArr: StoredMessage[] = [];
-                // Get last message from chat object (always available, no extra fetch needed)
-                if (chat.lastMessage) {
-                  try {
-                    const lastMsg = await this.formatMessage(
-                      chat.lastMessage,
-                      true,
-                    );
-                    lastMsgArr = [lastMsg];
-                  } catch (_) {}
-                }
-                this.chatStore[chatId] = {
-                  chatId,
-                  contact: {
-                    name: contactName,
-                    number: contactNumber,
-                    avatar: null,
-                  },
-                  messages: lastMsgArr,
-                  unreadCount: chat.unreadCount || 0,
-                  isGroup,
-                  isChannel,
-                  lastMessageTimestamp: chat.timestamp || chat.t || 0,
-                  _previewOnly: true,
-                };
+
+// For 1-on-1 chats, resolve the real contact name from the Contact store
+              if (!chat.isGroup && !chatId.endsWith('@newsletter') && chatId !== 'status@broadcast') {
+                try {
+                  const contact = await this.client!.getContactById(chatId);
+                  contactName = contact.pushname || contact.name || contact.number || contactName;
+                } catch (_) {}
               }
+              try {
+                // Fetch messages for this chat
+                let messages: StoredMessage[] = [];
+                // AFTER — try pupPage Store first (most reliable), then fallback
+                try {
+                  const rawMsgs = await (this.client as any).pupPage.evaluate(
+                    async (cid: string, lim: number) => {
+                      try {
+                        const S = (window as any).Store;
+                        const chat = S?.Chat?.get(cid) || await S?.Chat?.find?.(cid);
+                        if (!chat) return null;
+                        const msgStore = chat.msgs;
+                        if (!msgStore) return null;
+                        // Load earlier messages until we have enough
+                        let attempts = 0;
+                        while ((msgStore.models?.length || 0) < lim && attempts < 8) {
+                          const hasMore = await S?.LoadChatMessages?.loadEarlierMsgs(chat);
+                          if (!hasMore) break;
+                          await new Promise((r) => setTimeout(r, 250));
+                          attempts++;
+                        }
+                        return (msgStore.models || []).slice(-lim).map((m: any) => ({
+                          id: m.id?._serialized,
+                          from: m.id?.fromMe ? 'me' : m.id?.remote?._serialized || m.from?._serialized || '',
+                          body: m.body || m.caption || '',
+                          type: m.type || 'chat',
+                          timestamp: m.t || 0,
+                          fromMe: !!m.id?.fromMe,
+                          ack: m.ack || 0,
+                          hasMedia: !!m.hasMedia,
+                          author: m.author?._serialized || null,
+                          mimetype: m.mimetype || null,
+                        }));
+                      } catch (_) { return null; }
+                    },
+                    chatId,
+                    50,
+                  );
+
+                  if (rawMsgs?.length) {
+                    messages = rawMsgs.map((m: any) => ({
+                      id: m.id,
+                      from: m.from,
+                      body: m.body,
+                      type: m.type,
+                      timestamp: m.timestamp,
+                      fromMe: m.fromMe,
+                      ack: m.ack,
+                      hasMedia: m.hasMedia,
+                      media: null,
+                      author: m.author,
+                      mediaUrl: m.hasMedia ? `/api/whatsapp/media/${encodeURIComponent(m.id)}` : null,
+                      mimetype: m.mimetype || null,
+                    }));
+                    this.logger.log(`[CHATS] Store fetched ${messages.length} messages for ${chatId}`);
+                  } else {
+                    // Fallback: getChatById
+                    const waChat = await this.client!.getChatById(chatId);
+                    const waMessages = await waChat.fetchMessages({ limit: 50 });
+                    messages = await Promise.all(waMessages.map((m: any) => this.formatMessage(m, true)));
+                    this.logger.log(`[CHATS] getChatById fetched ${messages.length} messages for ${chatId}`);
+                  }
+                } catch (err: any) {
+                  this.logger.warn(`[CHATS] Failed to fetch messages for ${chatId}: ${err.message}`);
+                  if (chat.lastMessage) {
+                    try {
+                      messages = [await this.formatMessage(chat.lastMessage, true)];
+                    } catch (_) {}
+                  }
+                }
+
+                if (this.chatStore[chatId]) {
+                  this.chatStore[chatId].contact.name = contactName;
+                  this.chatStore[chatId].unreadCount = chat.unreadCount || 0;
+                  this.chatStore[chatId].messages = messages;
+                } else {
+                  this.chatStore[chatId] = {
+                    chatId,
+                    contact: {
+                      name: contactName,
+                      number: contactNumber,
+                      avatar: null,
+                    },
+                    messages,
+                    unreadCount: chat.unreadCount || 0,
+                    isGroup,
+                    isChannel,
+                    lastMessageTimestamp: chat.timestamp || chat.t || 0,
+                    _previewOnly: false,
+                  };
+                }
+              } catch (err: any) {
+                this.logger.error(`[CHATS] Error processing chat ${chatId}: ${err.message}`);
+              }
+
               loaded++;
             }),
           );

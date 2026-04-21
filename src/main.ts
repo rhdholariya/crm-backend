@@ -38,10 +38,16 @@ process.on('unhandledRejection', (reason: any) => {
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
-    rawBody: true,  // ← add this for Stripe webhook
+    rawBody: true, // ← add this for Stripe webhook
   });
   app.enableCors({
     origin: '*',
+    methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+      'ngrok-skip-browser-warning',
+    ],
   });
   app.setGlobalPrefix('api');
 

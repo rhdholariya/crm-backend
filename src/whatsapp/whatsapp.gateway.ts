@@ -87,29 +87,29 @@ export class WhatsAppGateway
   }
 
   // ── User is viewing a specific chat (clears unread) ─────────────────────────
-  @SubscribeMessage('viewing_chat')
-  handleViewingChat(
-    @ConnectedSocket() socket: Socket,
-    @MessageBody() data: string | { chatId: string } | any,
-  ) {
-    const { userId, profileId } = socket.data || {};
-    if (!userId || !profileId) return;
-
-    // Handle both string and object payloads from frontend
-    const chatId = typeof data === 'string' ? data : (data?.chatId || data?.id || null);
-    this.logger.log(`[SOCKET] viewing_chat → userId=${userId} chatId=${chatId}`);
-
-    const session = findSession(userId, profileId);
-    if (session) {
-      session.activeViewers[socket.id] = chatId || null;
-      if (chatId && session.chatStore[chatId]) {
-        session.chatStore[chatId].unreadCount = 0;
-        session.broadcast('chats', session.buildChatList());
-        // Send blue tick to sender
-        this.waService.markRead(userId, profileId, chatId).catch(() => {});
+    @SubscribeMessage('viewing_chat')
+    handleViewingChat(
+      @ConnectedSocket() socket: Socket,
+      @MessageBody() data: string | { chatId: string } | any,
+    ) {
+      const { userId, profileId } = socket.data || {};
+      if (!userId || !profileId) return;
+  
+      // Handle both string and object payloads from frontend
+      const chatId = typeof data === 'string' ? data : (data?.chatId || data?.id || null);
+      this.logger.log(`[SOCKET] viewing_chat → userId=${userId} chatId=${chatId}`);
+  
+      const session = findSession(userId, profileId);
+      if (session) {
+        session.activeViewers[socket.id] = chatId || null;
+        if (chatId && session.chatStore[chatId]) {
+          session.chatStore[chatId].unreadCount = 0;
+          session.broadcast('chats', session.buildChatList());
+          // Send blue tick to sender
+          this.waService.markRead(userId, profileId, chatId).catch(() => {});
+        }
       }
     }
-  }
 
   // ── Subscribe to status@broadcast updates ───────────────────────────────────
   @SubscribeMessage('subscribe_status')

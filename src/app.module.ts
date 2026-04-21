@@ -14,6 +14,9 @@ import { FeaturesModule } from './features/features.module';
 import { TagsModule } from './tags/tags.module';
 import { ContactsModule } from './contacts/contacts.module';
 import { WhatsAppModule } from './whatsapp/whatsapp.module';
+import { ChatCustomizationModule } from './chat-customization/chat-customization.module';
+import { EmailTemplatesModule } from './email-templates/email-templates.module';
+import { EmailCampaignsModule } from './email-campaigns/email-campaigns.module';
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -40,6 +43,9 @@ import { WhatsAppModule } from './whatsapp/whatsapp.module';
     TagsModule,
     ContactsModule,
     WhatsAppModule,
+    ChatCustomizationModule,
+    EmailTemplatesModule,
+    EmailCampaignsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

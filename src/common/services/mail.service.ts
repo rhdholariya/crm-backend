@@ -58,4 +58,13 @@ export class MailService {
       html: otpTemplate(otp),
     });
   }
+
+  async sendCampaignMail(to: string, subject: string, html: string, from?: string) {
+    await this.transporter.sendMail({
+      from: from ?? process.env.MAIL_FROM ?? process.env.MAIL_USER,
+      to,
+      subject,
+      html,
+    });
+  }
 }
