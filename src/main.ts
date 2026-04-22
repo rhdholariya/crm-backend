@@ -1,6 +1,8 @@
 import { NestFactory } from '@nestjs/core';
 import { BadRequestException, ValidationPipe, Logger } from '@nestjs/common';
+import { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from './app.module';
+import * as path from 'path';
 
 // ── Prevent Puppeteer/WhatsApp context errors from crashing the process ───────
 const logger = new Logger('ProcessGuard');
@@ -37,8 +39,18 @@ process.on('unhandledRejection', (reason: any) => {
 });
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule, {
-    rawBody: true, // ← add this for Stripe webhook
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+    rawBody: true,
+    bodyParser: true,
+  });
+
+  // Increase body size limit for base64 image uploads (default is 100kb)
+  app.use(require('express').json({ limit: '10mb' }));
+  app.use(require('express').urlencoded({ limit: '10mb', extended: true }));
+
+  // Serve uploads folder as static files → accessible at /uploads/...
+  app.useStaticAssets(path.join(process.cwd(), 'uploads'), {
+    prefix: '/uploads',
   });
   app.enableCors({
     origin: '*',

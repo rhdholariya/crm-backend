@@ -28,7 +28,7 @@ export class ChatCustomization {
   @Column({ type: 'varchar', nullable: true })
   backgroundColor: string | null;
 
-  @Column({ type: 'varchar', nullable: true })
+  @Column({ type: 'text', nullable: true })
   backgroundImage: string | null;
 
   @CreateDateColumn()
