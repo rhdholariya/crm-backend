@@ -415,6 +415,8 @@ export class WhatsAppSession {
       profileDataDir(this.userId, this.profileId),
       'session',
     );
+    const isProduction = process.env.NODE_ENV === 'production';
+
     const puppeteerConfig: any = {
       headless: true,
       args: [
@@ -423,11 +425,62 @@ export class WhatsAppSession {
         '--disable-dev-shm-usage',
         '--disable-gpu',
         '--no-first-run',
+        '--no-zygote',
         '--single-process',
+        '--disable-extensions',
+        '--disable-software-rasterizer',
+        '--disable-background-networking',
+        '--disable-default-apps',
+        '--disable-sync',
+        '--disable-translate',
+        '--hide-scrollbars',
+        '--metrics-recording-only',
+        '--mute-audio',
+        '--safebrowsing-disable-auto-update',
+        '--ignore-certificate-errors',
+        '--ignore-ssl-errors',
+        '--ignore-certificate-errors-spki-list',
+        ...(isProduction ? ['--disable-web-security'] : []),
       ],
+      ...(isProduction && { timeout: 60000 }),
     };
+
     if (process.env.PUPPETEER_EXECUTABLE_PATH) {
       puppeteerConfig.executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
+      this.logger.log(`[START] Using Chromium at: ${process.env.PUPPETEER_EXECUTABLE_PATH}`);
+    } else {
+      // 1. Try Puppeteer's own bundled Chromium (downloaded via postinstall)
+      try {
+        const puppeteer = require('puppeteer');
+        const bundled = puppeteer.executablePath?.();
+        if (bundled && fs.existsSync(bundled)) {
+          puppeteerConfig.executablePath = bundled;
+          this.logger.log(`[START] Using Puppeteer bundled Chromium: ${bundled}`);
+        }
+      } catch (_) {}
+
+      // 2. Fallback: auto-detect common system paths on Linux
+      if (!puppeteerConfig.executablePath) {
+        const chromiumPaths = [
+          '/usr/bin/google-chrome',
+          '/usr/bin/google-chrome-stable',
+          '/usr/bin/chromium',
+          '/usr/bin/chromium-browser',
+          '/snap/bin/chromium',
+          '/usr/lib/chromium-browser/chromium-browser',
+        ];
+        for (const p of chromiumPaths) {
+          if (fs.existsSync(p)) {
+            puppeteerConfig.executablePath = p;
+            this.logger.log(`[START] Auto-detected system Chromium: ${p}`);
+            break;
+          }
+        }
+      }
+
+      if (!puppeteerConfig.executablePath) {
+        this.logger.warn(`[START] No Chromium found — Puppeteer will use its default. If QR fails, set PUPPETEER_EXECUTABLE_PATH in .env`);
+      }
     }
 
     this.client = new Client({
@@ -569,11 +622,19 @@ export class WhatsAppSession {
               let contactName = chat.name || chatId.replace(/@.+/, '');
               const contactNumber = chatId.replace(/@.+/, '');
 
-// For 1-on-1 chats, resolve the real contact name from the Contact store
-              if (!chat.isGroup && !chatId.endsWith('@newsletter') && chatId !== 'status@broadcast') {
+              // For 1-on-1 chats, resolve the real contact name from the Contact store
+              if (
+                !chat.isGroup &&
+                !chatId.endsWith('@newsletter') &&
+                chatId !== 'status@broadcast'
+              ) {
                 try {
                   const contact = await this.client!.getContactById(chatId);
-                  contactName = contact.pushname || contact.name || contact.number || contactName;
+                  contactName =
+                    contact.pushname ||
+                    contact.name ||
+                    contact.number ||
+                    contactName;
                 } catch (_) {}
               }
               try {
@@ -585,31 +646,44 @@ export class WhatsAppSession {
                     async (cid: string, lim: number) => {
                       try {
                         const S = (window as any).Store;
-                        const chat = S?.Chat?.get(cid) || await S?.Chat?.find?.(cid);
+                        const chat =
+                          S?.Chat?.get(cid) || (await S?.Chat?.find?.(cid));
                         if (!chat) return null;
                         const msgStore = chat.msgs;
                         if (!msgStore) return null;
                         // Load earlier messages until we have enough
                         let attempts = 0;
-                        while ((msgStore.models?.length || 0) < lim && attempts < 8) {
-                          const hasMore = await S?.LoadChatMessages?.loadEarlierMsgs(chat);
+                        while (
+                          (msgStore.models?.length || 0) < lim &&
+                          attempts < 8
+                        ) {
+                          const hasMore =
+                            await S?.LoadChatMessages?.loadEarlierMsgs(chat);
                           if (!hasMore) break;
                           await new Promise((r) => setTimeout(r, 250));
                           attempts++;
                         }
-                        return (msgStore.models || []).slice(-lim).map((m: any) => ({
-                          id: m.id?._serialized,
-                          from: m.id?.fromMe ? 'me' : m.id?.remote?._serialized || m.from?._serialized || '',
-                          body: m.body || m.caption || '',
-                          type: m.type || 'chat',
-                          timestamp: m.t || 0,
-                          fromMe: !!m.id?.fromMe,
-                          ack: m.ack || 0,
-                          hasMedia: !!m.hasMedia,
-                          author: m.author?._serialized || null,
-                          mimetype: m.mimetype || null,
-                        }));
-                      } catch (_) { return null; }
+                        return (msgStore.models || [])
+                          .slice(-lim)
+                          .map((m: any) => ({
+                            id: m.id?._serialized,
+                            from: m.id?.fromMe
+                              ? 'me'
+                              : m.id?.remote?._serialized ||
+                                m.from?._serialized ||
+                                '',
+                            body: m.body || m.caption || '',
+                            type: m.type || 'chat',
+                            timestamp: m.t || 0,
+                            fromMe: !!m.id?.fromMe,
+                            ack: m.ack || 0,
+                            hasMedia: !!m.hasMedia,
+                            author: m.author?._serialized || null,
+                            mimetype: m.mimetype || null,
+                          }));
+                      } catch (_) {
+                        return null;
+                      }
                     },
                     chatId,
                     50,
@@ -627,22 +701,36 @@ export class WhatsAppSession {
                       hasMedia: m.hasMedia,
                       media: null,
                       author: m.author,
-                      mediaUrl: m.hasMedia ? `/api/whatsapp/media/${encodeURIComponent(m.id)}` : null,
+                      mediaUrl: m.hasMedia
+                        ? `/api/whatsapp/media/${encodeURIComponent(m.id)}`
+                        : null,
                       mimetype: m.mimetype || null,
                     }));
-                    this.logger.log(`[CHATS] Store fetched ${messages.length} messages for ${chatId}`);
+                    this.logger.log(
+                      `[CHATS] Store fetched ${messages.length} messages for ${chatId}`,
+                    );
                   } else {
                     // Fallback: getChatById
                     const waChat = await this.client!.getChatById(chatId);
-                    const waMessages = await waChat.fetchMessages({ limit: 50 });
-                    messages = await Promise.all(waMessages.map((m: any) => this.formatMessage(m, true)));
-                    this.logger.log(`[CHATS] getChatById fetched ${messages.length} messages for ${chatId}`);
+                    const waMessages = await waChat.fetchMessages({
+                      limit: 50,
+                    });
+                    messages = await Promise.all(
+                      waMessages.map((m: any) => this.formatMessage(m, true)),
+                    );
+                    this.logger.log(
+                      `[CHATS] getChatById fetched ${messages.length} messages for ${chatId}`,
+                    );
                   }
                 } catch (err: any) {
-                  this.logger.warn(`[CHATS] Failed to fetch messages for ${chatId}: ${err.message}`);
+                  this.logger.warn(
+                    `[CHATS] Failed to fetch messages for ${chatId}: ${err.message}`,
+                  );
                   if (chat.lastMessage) {
                     try {
-                      messages = [await this.formatMessage(chat.lastMessage, true)];
+                      messages = [
+                        await this.formatMessage(chat.lastMessage, true),
+                      ];
                     } catch (_) {}
                   }
                 }
@@ -668,7 +756,9 @@ export class WhatsAppSession {
                   };
                 }
               } catch (err: any) {
-                this.logger.error(`[CHATS] Error processing chat ${chatId}: ${err.message}`);
+                this.logger.error(
+                  `[CHATS] Error processing chat ${chatId}: ${err.message}`,
+                );
               }
 
               loaded++;
@@ -680,7 +770,7 @@ export class WhatsAppSession {
             total: chats.length,
             loaded,
             percent,
-          });
+          }); 
           this.broadcast('chats', this.buildChatList());
         }
         this.broadcast('chats_loading', {
@@ -1029,9 +1119,7 @@ export class WhatsAppSession {
   }
 
   // ── Get presence for a specific contact ──────────────────────────────────
-  async getPresence(
-    chatId: string,
-  ): Promise<{
+  async getPresence(chatId: string): Promise<{
     chatId: string;
     isOnline: boolean;
     isTyping: boolean;
@@ -1118,113 +1206,218 @@ export class WhatsAppSession {
   // ── Start real-time presence listener for a contact ───────────────────────
   async watchPresence(
     chatId: string,
-    onUpdate: (data: any) => void,
+    onUpdate: (data: {
+      chatId: string;
+      isOnline: boolean;
+      isTyping: boolean;
+      isRecording: boolean;
+      typingUsers: string[];
+      lastSeen: number | null;
+    }) => void,
   ): Promise<() => void> {
-    if (!this.isConnected()) return () => {};
+    this.logger.log(`[PRESENCE] watchPresence called → chatId=${chatId} connected=${this.isConnected()}`);
+
+    if (!this.isConnected()) {
+      this.logger.warn(`[PRESENCE] watchPresence aborted — session not connected`);
+      return () => {};
+    }
 
     let active = true;
 
-    // Subscribe and set up event listeners
+    // Step 1: Subscribe to presence + always init __pw (even if subscribe fails)
     try {
-      await (this.client as any).pupPage.evaluate(async (cid: string) => {
+      const subResult = await (this.client as any).pupPage.evaluate(async (cid: string) => {
         const S = (window as any).Store;
-        const wid = S?.WidFactory?.createWid(cid);
 
-        // Subscribe to presence updates
-        if (wid) {
-          try {
-            await S?.PresenceUtils?.subscribe(wid);
-          } catch (_) {}
-          try {
-            await S?.Presence?.subscribe(wid);
-          } catch (_) {}
-        }
+        // Always init __pw first so poll never hits undefined
+        (window as any).__pw = (window as any).__pw || {};
+        (window as any).__pw[cid] = { isOnline: null, isTyping: null, lastSeen: null };
 
-        // Set up event listeners on Presence store
-        if (S?.Presence) {
-          try {
-            S.Presence.on('change', (presence: any) => {
-              if (presence?.id?.user === cid.split('@')[0]) {
-                (window as any).__presenceChanged = true;
-              }
-            });
-          } catch (_) {}
-        }
+        if (!S) return { error: 'Store not found' };
 
-        // Initialize watcher state
-        (window as any).__presenceWatchers =
-          (window as any).__presenceWatchers || {};
-        (window as any).__presenceWatchers[cid] = {
-          isOnline: null,
-          isTyping: null,
-          lastSeen: null,
-          emitted: false,
+        const wid = S.WidFactory?.createWid(cid);
+        if (!wid) return { error: 'WidFactory failed to create wid' };
+
+        // Wrap each subscribe attempt individually so one failure doesn't abort others
+        const trySubscribe = async (fn: any, label: string) => {
+          try {
+            if (typeof fn === 'function') {
+              await fn(wid);
+              return `${label}:ok`;
+            }
+            return `${label}:not_a_function`;
+          } catch (e: any) {
+            return `${label}:error(${e?.message})`;
+          }
+        };
+
+        const results = await Promise.all([
+          trySubscribe(S.PresenceUtils?.subscribe?.bind(S.PresenceUtils), 'PresenceUtils'),
+          trySubscribe(S.Presence?.subscribe?.bind(S.Presence), 'Presence'),
+          trySubscribe(S.PresenceStore?.subscribe?.bind(S.PresenceStore), 'PresenceStore'),
+        ]);
+
+        return {
+          wid: wid._serialized,
+          presenceUtils: !!S.PresenceUtils,
+          presence: !!S.Presence,
+          presenceStore: !!S.PresenceStore,
+          results,
         };
       }, chatId);
-    } catch (_) {}
 
-    // Poll every 1.5s for changes (more frequent for better responsiveness)
+      this.logger.log(`[PRESENCE] Subscribe result for ${chatId}: ${JSON.stringify(subResult)}`);
+    } catch (err: any) {
+      // Even if evaluate itself throws, ensure __pw is seeded via a second evaluate
+      this.logger.warn(`[PRESENCE] Subscribe step threw for ${chatId}: ${err.message} — seeding __pw fallback`);
+      try {
+        await (this.client as any).pupPage.evaluate((cid: string) => {
+          (window as any).__pw = (window as any).__pw || {};
+          (window as any).__pw[cid] = { isOnline: null, isTyping: null, lastSeen: null };
+        }, chatId);
+      } catch (_) {}
+    }
+
+    // Step 2: Poll every 1.5s, emit only on change
+    let pollCount = 0;
     const poll = async () => {
+      this.logger.log(`[PRESENCE] Poll loop started for chatId=${chatId}`);
+
       while (active && this.isConnected()) {
         try {
-          const update = await (this.client as any).pupPage.evaluate(
+          const result = await (this.client as any).pupPage.evaluate(
             (cid: string) => {
-              const S = (window as any).Store;
-              const presence =
-                S?.Presence?.get(cid) || S?.PresenceStore?.get(cid);
-              const contact = S?.Contact?.get(cid);
-              const watchers = (window as any).__presenceWatchers || {};
-              const prev = watchers[cid] || {};
+              try {
+                const S = (window as any).Store;
 
-              const isOnline =
-                (presence as any)?.isOnline ??
-                (contact as any)?.isOnline ??
-                false;
-              const isTyping =
-                (presence as any)?.chatstate === 'composing' ||
-                (presence as any)?.type === 'composing';
-              const lastSeen =
-                (presence as any)?.t ||
-                (presence as any)?.lastSeen ||
-                (contact as any)?.lastSeen ||
-                null;
+                // Try every known presence store path
+                const p =
+                  S?.Presence?.get(cid) ||
+                  S?.PresenceStore?.get(cid) ||
+                  S?.PresenceUtils?.getPresence?.(cid) ||
+                  null;
 
-              // Emit initial state OR if changed
-              const hasChanged =
-                prev.isOnline !== isOnline ||
-                prev.isTyping !== isTyping ||
-                prev.lastSeen !== lastSeen;
-              const shouldEmit = !prev.emitted || hasChanged;
+                const c = S?.Contact?.get(cid) || null;
 
-              if (shouldEmit) {
-                watchers[cid] = { isOnline, isTyping, lastSeen, emitted: true };
-                (window as any).__presenceChanged = false;
-                return {
-                  chatId: cid,
+                // WA Web uses __x_ prefixed internal fields
+                // __x_isOnline is unreliable — derive from chatstate instead
+                const chatstateObj = p?.__x_chatstate ?? p?.chatstate;
+                const chatstateStr = chatstateObj
+                  ? (typeof chatstateObj === 'string'
+                      ? chatstateObj
+                      : (chatstateObj?.type ?? chatstateObj?.stateType ?? chatstateObj?.chatstate ?? ''))
+                  : '';
+
+                // online = chatstate is 'available' OR __x_isOnline with hasData guard
+                const hasData   = !!(p?.__x_hasData);
+                const isOnline  = chatstateStr === 'available' || (hasData && !!(p?.__x_isOnline));
+                const isTyping  = chatstateStr === 'composing';
+                const isRecording = chatstateStr === 'recording';
+
+                // typingUserIds / recordingUserIds for group chats
+                const typingIds: string[] = [];
+                try {
+                  const tIds = p?.__x_typingUserIds;
+                  if (tIds && typeof tIds[Symbol.iterator] === 'function') {
+                    for (const id of tIds) typingIds.push(String(id?._serialized ?? id));
+                  }
+                } catch (_) {}
+
+                const lastSeen = Number(p?.t ?? p?.lastSeen ?? c?.lastSeen ?? 0) || null;
+
+                // Collect presence keys safely
+                let presenceKeys: string[] = [];
+                try { presenceKeys = p ? Object.keys(p) : []; } catch (_) {}
+
+                const snapshot = {
+                  hasPresence  : !!p,
+                  hasContact   : !!c,
+                  hasData,
+                  chatstate    : chatstateStr,
+                  presenceType : String(p?.type ?? ''),
+                  presenceKeys,
                   isOnline,
                   isTyping,
+                  isRecording,
+                  typingUsers  : typingIds,
                   lastSeen,
-                  changed: true,
                 };
+
+                // Ensure __pw entry exists
+                (window as any).__pw = (window as any).__pw || {};
+                (window as any).__pw[cid] = (window as any).__pw[cid] || { isOnline: null, isTyping: null, lastSeen: null };
+                const prev = (window as any).__pw[cid];
+
+                const changed =
+                  prev.isOnline    !== isOnline    ||
+                  prev.isTyping    !== isTyping    ||
+                  prev.isRecording !== isRecording ||
+                  prev.lastSeen    !== lastSeen    ||
+                  JSON.stringify(prev.typingUsers ?? []) !== JSON.stringify(typingIds);
+
+                if (changed) {
+                  (window as any).__pw[cid] = { isOnline, isTyping, isRecording, typingUsers: typingIds, lastSeen };
+                }
+
+                // Always return plain object with only primitives/arrays
+                return JSON.parse(JSON.stringify({ changed, chatId: cid, isOnline, isTyping, isRecording, typingUsers: typingIds, lastSeen, snapshot }));
+              } catch (e: any) {
+                return { error: String(e?.message), changed: false, chatId: cid, isOnline: false, isTyping: false, lastSeen: null, snapshot: null };
               }
-              return null;
             },
             chatId,
           );
 
-          if (update?.changed) {
-            this.logger.log(
-              `[PRESENCE] Update chatId=${chatId} online=${update.isOnline} typing=${update.isTyping}`,
-            );
-            onUpdate(update);
+          pollCount++;
+
+          // Raw dump on first 3 polls to diagnose serialization
+          if (pollCount <= 3) {
+            this.logger.log(`[PRESENCE] Raw poll result #${pollCount} chatId=${chatId}: ${JSON.stringify(result)}`);
           }
-        } catch (_) {}
+
+          // Log every 10th poll so we can confirm the loop is alive without flooding
+          if (pollCount % 10 === 1) {
+            this.logger.log(
+              `[PRESENCE] Poll #${pollCount} chatId=${chatId} → hasPresence=${result?.snapshot?.hasPresence} isOnline=${result?.snapshot?.isOnline} isTyping=${result?.snapshot?.isTyping} lastSeen=${result?.snapshot?.lastSeen} presenceKeys=[${result?.snapshot?.presenceKeys}] chatstate=${result?.snapshot?.chatstate}`,
+            );
+          }
+
+          if (result?.changed) {
+            this.logger.log(
+              `[PRESENCE] ✅ CHANGE detected chatId=${chatId} online=${result.isOnline} typing=${result.isTyping} recording=${result.isRecording} typingUsers=${JSON.stringify(result.typingUsers)} lastSeen=${result.lastSeen}`,
+            );
+            onUpdate({
+              chatId      : result.chatId,
+              isOnline    : result.isOnline,
+              isTyping    : result.isTyping,
+              isRecording : result.isRecording ?? false,
+              typingUsers : result.typingUsers ?? [],
+              lastSeen    : result.lastSeen,
+            });
+          }
+        } catch (err: any) {
+          if (
+            err.message?.includes('Execution context') ||
+            err.message?.includes('Target closed')
+          ) {
+            this.logger.warn(`[PRESENCE] Poll stopped — context destroyed for chatId=${chatId}`);
+            active = false;
+            break;
+          }
+          this.logger.error(`[PRESENCE] Poll error for chatId=${chatId}: ${err.message}`);
+        }
+
         await new Promise((r) => setTimeout(r, 1500));
       }
+
+      this.logger.log(`[PRESENCE] Poll loop ended for chatId=${chatId} active=${active}`);
     };
 
-    poll();
+    poll(); // fire and forget
+    this.logger.log(`[PRESENCE] Watcher started for chatId=${chatId}`);
+
     return () => {
+      this.logger.log(`[PRESENCE] Watcher stopped for chatId=${chatId} after ${pollCount} polls`);
       active = false;
     };
   }
