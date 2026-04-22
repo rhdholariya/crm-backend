@@ -20,8 +20,14 @@ export class EmailTemplatesService {
     return this.repo.save(this.repo.create({ ...dto, userId }));
   }
 
-  findAll(userId: number) {
-    return this.repo.find({ where: { userId }, order: { createdAt: 'DESC' } });
+  findAll(userId: number, page = 1, limit = 10) {
+    const skip = (page - 1) * limit;
+    return this.repo.findAndCount({
+      where: { userId },
+      order: { createdAt: 'DESC' },
+      skip,
+      take: limit,
+    });
   }
 
   async findOne(userId: number, id: number) {

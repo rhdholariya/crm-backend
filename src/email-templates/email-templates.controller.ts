@@ -6,6 +6,7 @@ import {
   Delete,
   Param,
   Body,
+  Query,
   UseGuards,
   ParseIntPipe,
 } from '@nestjs/common';
@@ -32,9 +33,19 @@ export class EmailTemplatesController {
   }
 
   @Get()
-  async findAll(@CurrentUser() user: AuthUser) {
-    const templates = await this.service.findAll(user.id);
-    return successResponse('Email templates fetched successfully', templates);
+  async findAll(
+    @CurrentUser() user: AuthUser,
+    @Query('page') page = 1,
+    @Query('limit') limit = 10,
+  ) {
+    const [templates, total] = await this.service.findAll(user.id, Number(page), Number(limit));
+    return successResponse('Email templates fetched successfully', {
+      data: templates,
+      total,
+      page: Number(page),
+      limit: Number(limit),
+      totalPages: Math.ceil(total / Number(limit)),
+    });
   }
 
   @Get(':id')
