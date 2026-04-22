@@ -15,4 +15,9 @@ export class UpsertChatCustomizationDto {
   @IsOptional()
   @IsString()
   backgroundColor?: string;
+
+  /** Base64 encoded image string e.g. "data:image/png;base64,iVBOR..." */
+  @IsOptional()
+  @IsString()
+  backgroundImage?: string;
 }
