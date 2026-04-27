@@ -460,38 +460,52 @@ export class WhatsAppSession {
       ...(isProduction && { timeout: 60000 }),
     };
 
-    if (process.env.PUPPETEER_EXECUTABLE_PATH) {
-      puppeteerConfig.executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
-      this.logger.log(`[START] Using Chromium at: ${process.env.PUPPETEER_EXECUTABLE_PATH}`);
-    } else {
-      // 1. Try Puppeteer's own bundled Chromium (downloaded via postinstall)
-      try {
-        const puppeteer = require('puppeteer');
-        const bundled = puppeteer.executablePath?.();
-        if (bundled && fs.existsSync(bundled)) {
-          puppeteerConfig.executablePath = bundled;
-          this.logger.log(`[START] Using Puppeteer bundled Chromium: ${bundled}`);
-        }
-      } catch (_) {}
+    // if (process.env.PUPPETEER_EXECUTABLE_PATH) {
+    //   puppeteerConfig.executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
+    //   this.logger.log(`[START] Using Chromium at: ${process.env.PUPPETEER_EXECUTABLE_PATH}`);
+    // } else {
+    //   // 1. Try Puppeteer's own bundled Chromium (downloaded via postinstall)
+    //   try {
+    //     const puppeteer = require('puppeteer');
+    //     const bundled = puppeteer.executablePath?.();
+    //     if (bundled && fs.existsSync(bundled)) {
+    //       puppeteerConfig.executablePath = bundled;
+    //       this.logger.log(`[START] Using Puppeteer bundled Chromium: ${bundled}`);
+    //     }
+    //   } catch (_) {}
+    //
+    //   // 2. Fallback: auto-detect common system paths on Linux
+    //   if (!puppeteerConfig.executablePath) {
+    //     const chromiumPaths = [
+    //       '/usr/bin/google-chrome',
+    //       '/usr/bin/google-chrome-stable',
+    //       '/usr/bin/chromium',
+    //       '/usr/bin/chromium-browser',
+    //       '/snap/bin/chromium',
+    //       '/usr/lib/chromium-browser/chromium-browser',
+    //     ];
+    //     for (const p of chromiumPaths) {
+    //       if (fs.existsSync(p)) {
+    //         puppeteerConfig.executablePath = p;
+    //         this.logger.log(`[START] Auto-detected system Chromium: ${p}`);
+    //         break;
+    //       }
+    //     }
+    //   }
 
-      // 2. Fallback: auto-detect common system paths on Linux
-      if (!puppeteerConfig.executablePath) {
-        const chromiumPaths = [
-          '/usr/bin/google-chrome',
-          '/usr/bin/google-chrome-stable',
-          '/usr/bin/chromium',
-          '/usr/bin/chromium-browser',
-          '/snap/bin/chromium',
-          '/usr/lib/chromium-browser/chromium-browser',
-        ];
-        for (const p of chromiumPaths) {
-          if (fs.existsSync(p)) {
-            puppeteerConfig.executablePath = p;
-            this.logger.log(`[START] Auto-detected system Chromium: ${p}`);
-            break;
-          }
-        }
+    try {
+      const puppeteer = require('puppeteer');
+      const bundledPath = puppeteer.executablePath();
+
+      if (bundledPath && fs.existsSync(bundledPath)) {
+        puppeteerConfig.executablePath = bundledPath;
+        this.logger.log(`[START] Using Puppeteer bundled Chromium: ${bundledPath}`);
+      } else {
+        throw new Error('Bundled Chromium not found');
       }
+    } catch (err: any) {
+      this.logger.error(`[START] Failed to resolve Chromium: ${err.message}`);
+    }
 
       if (!puppeteerConfig.executablePath) {
         this.logger.warn(`[START] No Chromium found — Puppeteer will use its default. If QR fails, set PUPPETEER_EXECUTABLE_PATH in .env`);
