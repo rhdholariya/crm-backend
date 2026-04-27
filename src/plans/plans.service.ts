@@ -8,6 +8,7 @@ import { UpdatePlanDto } from './dto/update-plan.dto';
 import { StripeService } from '../stripe/stripe.service';
 import { PaymentSettingsService } from '../payment-settings/payment-settings.service';
 import { FeaturesService } from '../features/features.service';
+import { CurrencyService } from '../currency/currency.service';
 
 @Injectable()
 export class PlansService {
@@ -17,6 +18,7 @@ export class PlansService {
     private stripeService: StripeService,
     private paymentSettingsService: PaymentSettingsService,
     private featuresService: FeaturesService,
+    private currencyService: CurrencyService,
   ) {}
 
   async getPlans(roleId: number) {
@@ -29,10 +31,12 @@ export class PlansService {
 
     let currency = 'usd';
     try {
+      // First try the new currencies table (active currency by code from payment-settings)
       const setting = await this.paymentSettingsService.findOne('currency');
-      currency = setting.value;
+      const found = await this.currencyService.findByCode(setting.value);
+      currency = found.code.toLowerCase();
     } catch {
-      // key not set, fall back to default
+      // fall back to USD
     }
 
     const plansWithFeatures = await Promise.all(

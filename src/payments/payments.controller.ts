@@ -9,6 +9,8 @@ import {
   UseGuards,
   BadRequestException,
   Query,
+  ParseIntPipe,
+  DefaultValuePipe,
 } from '@nestjs/common';
 import type { RawBodyRequest } from '@nestjs/common';
 import { Request } from 'express';
@@ -107,5 +109,21 @@ export class PaymentsController {
       return successResponse('No active plan', null);
     }
     return successResponse('Success', subscription);
+  }
+
+  // Admin — all customer plans
+  @UseGuards(JwtAuthGuard)
+  @Get('admin/customer-plans')
+  async adminCustomerPlans(
+    @CurrentUser() user: AuthUser,
+    @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
+    @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number,
+    @Query('search') search = '',
+  ) {
+    if (user.roleId !== 1) {
+      return successResponse('Forbidden', null);
+    }
+    const result = await this.paymentsService.getAllCustomerPlans(page, limit, search);
+    return successResponse('Customer plans fetched successfully', result);
   }
 }

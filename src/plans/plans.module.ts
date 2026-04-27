@@ -6,9 +6,10 @@ import { PlansController } from './plans.controller';
 import { StripeModule } from '../stripe/stripe.module';
 import { PaymentSettingsModule } from '../payment-settings/payment-settings.module';
 import { FeaturesModule } from '../features/features.module';
+import { CurrencyModule } from '../currency/currency.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Plan]), StripeModule, PaymentSettingsModule, FeaturesModule],
+  imports: [TypeOrmModule.forFeature([Plan]), StripeModule, PaymentSettingsModule, FeaturesModule, CurrencyModule],
   providers: [PlansService],
   controllers: [PlansController],
   exports: [PlansService],

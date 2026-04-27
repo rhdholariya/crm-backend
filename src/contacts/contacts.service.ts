@@ -34,6 +34,7 @@ export class ContactsService {
       name: dto.name,
       email: dto.email,
       phoneNumber: dto.phoneNumber,
+      note: dto.note,
       tags,
     });
     return this.contactRepo.save(contact);

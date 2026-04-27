@@ -15,6 +15,8 @@ export interface StoredMessage {
   hasMedia: boolean;
   media: { mimetype: string; filename: string | null } | null;
   author: string | null;
+  isQuickReply?: boolean;
+  selectedButtonId?: string;
 }
 
 export interface ChatEntry {

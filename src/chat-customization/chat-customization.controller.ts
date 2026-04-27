@@ -1,11 +1,4 @@
-import {
-  Controller,
-  Get,
-  Post,
-  Delete,
-  Body,
-  UseGuards,
-} from '@nestjs/common';
+import { Controller, Get, Post, Delete, Body, UseGuards } from '@nestjs/common';
 import { ChatCustomizationService } from './chat-customization.service';
 import { UpsertChatCustomizationDto } from './dto/upsert-chat-customization.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';

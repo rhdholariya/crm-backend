@@ -847,6 +847,87 @@ export class PaymentsService {
     return this.subscriptionRepo.find({ where: { userId } });
   }
 
+  // ─── Admin: all customer plans ────────────────────────────────────────────
+  async getAllCustomerPlans(page = 1, limit = 10, search = '') {
+    const skip = (page - 1) * limit;
+
+    // Raw query to join subscriptions → users → plans in one shot
+    const qb = this.subscriptionRepo
+      .createQueryBuilder('sub')
+      .innerJoin('users', 'u', 'u.id = sub.userId')
+      .innerJoin('plans', 'p', 'p.id = sub.planId')
+      .select([
+        'sub.id            AS "subscriptionId"',
+        'sub.status        AS "status"',
+        'sub.currentPeriodStart AS "billingStart"',
+        'sub.currentPeriodEnd   AS "billingEnd"',
+        'sub.cancelledAt   AS "cancelledAt"',
+        'u.id              AS "userId"',
+        'u."firstName"     AS "firstName"',
+        'u."lastName"      AS "lastName"',
+        'u.email           AS "email"',
+        'p.id              AS "planId"',
+        'p.name            AS "planName"',
+        'p.price           AS "planPrice"',
+        'p.interval        AS "planInterval"',
+      ])
+      .orderBy('sub.id', 'DESC');
+
+    if (search) {
+      qb.where(
+        `(u.email ILIKE :s OR u."firstName" ILIKE :s OR u."lastName" ILIKE :s OR p.name ILIKE :s)`,
+        { s: `%${search}%` },
+      );
+    }
+
+    const total = await qb.getCount();
+    const rows = await qb.offset(skip).limit(limit).getRawMany();
+
+    // ── Summary stats ──────────────────────────────────────────────────────
+    const allSubs = await this.subscriptionRepo.find();
+    const now = new Date();
+    const totalPurchased = allSubs.length;
+    const totalActive = allSubs.filter((s) => s.status === SubscriptionStatus.ACTIVE).length;
+    const totalExpired = allSubs.filter((s) => s.status === SubscriptionStatus.EXPIRED).length;
+    const expiringSoon = allSubs.filter((s) => {
+      if (s.status !== SubscriptionStatus.ACTIVE || !s.currentPeriodEnd) return false;
+      const daysLeft = (new Date(s.currentPeriodEnd).getTime() - now.getTime()) / 86400000;
+      return daysLeft <= 7 && daysLeft >= 0;
+    }).length;
+
+    // Revenue from paid invoices
+    const invoices = await this.invoiceRepo.find({ where: { status: InvoiceStatus.PAID } });
+    const revenueGenerated = invoices.reduce((sum, inv) => sum + Number(inv.amount), 0);
+
+    const data = rows.map((r) => ({
+      subscriptionId: r.subscriptionId,
+      status: r.status,
+      billingPeriod: { start: r.billingStart, end: r.billingEnd },
+      cancelledAt: r.cancelledAt,
+      subscribedOn: r.billingStart,
+      customer: {
+        id: r.userId,
+        name: `${r.firstName} ${r.lastName}`,
+        email: r.email,
+      },
+      plan: {
+        id: r.planId,
+        name: r.planName,
+        price: r.planPrice,
+        interval: r.planInterval,
+      },
+    }));
+
+    return {
+      summary: { totalPurchased, revenueGenerated, totalActive, totalExpired, expiringSoon },
+      data,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+    };
+  }
+
   async getUserInvoices(userId: number) {
     return this.invoiceRepo.find({ where: { userId } });
   }

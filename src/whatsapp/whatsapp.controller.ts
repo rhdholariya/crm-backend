@@ -13,6 +13,7 @@ import {
   NotFoundException,
   Query,
   Logger,
+  ParseIntPipe,
 } from '@nestjs/common';
 import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 import * as multer from 'multer';
@@ -24,6 +25,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { AuthUser } from '../auth/entities/auth-user.entity';
 import { successResponse } from '../common/utils/response.util';
+import { WaQrTemplateService } from './wa-qr-template.service';
 
 interface UploadedFileType {
   path: string;
@@ -45,7 +47,7 @@ const mediaStorage = multer.diskStorage({
 export class WhatsAppController {
   private readonly logger = new Logger(WhatsAppController.name);
 
-  constructor(private readonly waService: WhatsAppService) {}
+  constructor(private readonly waService: WhatsAppService, private readonly qrTemplateService: WaQrTemplateService) {}
 
   // ── Session ─────────────────────────────────────────────────────────────────
 
@@ -146,6 +148,70 @@ export class WhatsAppController {
     return successResponse('Message sent');
   }
 
+  // ── Contacts — static routes FIRST, param routes after ───────────────────────
+
+  @Get('contacts/search')
+  async searchContacts(
+    @CurrentUser() user: AuthUser,
+    @Query('q') q = '',
+  ) {
+    this.logger.log(`[API] GET /contacts/search → userId=${user.id} q="${q}"`);
+    const contacts = await this.waService.searchContacts(user.id, PROFILE_ID, q);
+    return successResponse('Contacts', contacts);
+  }
+
+  @Post('contacts/:contactId/send/template/:templateId')
+  async sendTemplateToContact(
+    @CurrentUser() user: AuthUser,
+    @Param('contactId', ParseIntPipe) contactId: number,
+    @Param('templateId', ParseIntPipe) templateId: number,
+    @Body() body: { params?: Record<string, string> },
+  ) {
+    this.logger.log(`[API] POST /contacts/${contactId}/send/template/${templateId} → userId=${user.id}`);
+    const result = await this.qrTemplateService.sendToContact(
+      user.id,
+      templateId,
+      contactId,
+      body.params || {},
+    );
+    return successResponse('Template sent to contact', result);
+  }
+
+  @Post('contacts/:contactId/send')
+  async sendToContact(
+    @CurrentUser() user: AuthUser,
+    @Param('contactId', ParseIntPipe) contactId: number,
+    @Body() body: { message: string },
+  ) {
+    if (!body.message) throw new BadRequestException('message is required');
+    this.logger.log(`[API] POST /contacts/${contactId}/send → userId=${user.id}`);
+    const result = await this.waService.sendToContact(user.id, PROFILE_ID, contactId, body.message);
+    return successResponse('Message sent to contact', result);
+  }
+
+  @Get('contacts/:phone/lookup')
+  async lookupNumber(
+    @CurrentUser() user: AuthUser,
+    @Param('phone') phone: string,
+  ) {
+    const decoded = decodeURIComponent(phone);
+    this.logger.log(`[API] GET /contacts/${decoded}/lookup → userId=${user.id}`);
+    const result = await this.waService.lookupNumber(user.id, PROFILE_ID, decoded);
+    return successResponse('Number lookup', result);
+  }
+
+  @Get('contacts/:phone')
+  async getContactInfo(
+    @CurrentUser() user: AuthUser,
+    @Param('phone') phone: string,
+  ) {
+    const decoded = decodeURIComponent(phone);
+    this.logger.log(`[API] GET /contacts/${decoded} → userId=${user.id}`);
+    const contact = await this.waService.getContactInfo(user.id, PROFILE_ID, decoded);
+    if (!contact) throw new NotFoundException(`Contact not found for: ${decoded}`);
+    return successResponse('Contact info', contact);
+  }
+
   // ── Presence ─────────────────────────────────────────────────────────────────
 
   @Get('presence/:chatId')
@@ -161,17 +227,6 @@ export class WhatsAppController {
     }
     const presence = await session.getPresence(decoded);
     return successResponse('Presence', presence ?? { chatId: decoded, isOnline: false, isTyping: false, lastSeen: null });
-  }
-
-  @Get('contacts/search')
-  async searchContacts(
-    @CurrentUser() user: AuthUser,
-    @Query('q') q = '',
-  ) {
-    this.logger.log(`[API] GET /contacts/search → userId=${user.id} q="${q}"`);
-    const contacts = await this.waService.searchContacts(user.id, PROFILE_ID, q);
-    this.logger.log(`[API] Found ${contacts.length} contacts for q="${q}"`);
-    return successResponse('Contacts', contacts);
   }
 
   // ── Media on demand ──────────────────────────────────────────────────────────

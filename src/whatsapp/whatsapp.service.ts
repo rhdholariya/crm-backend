@@ -1,4 +1,4 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit, BadRequestException, NotFoundException } from '@nestjs/common';
 import { Namespace } from 'socket.io';
 import {
   getSession,
@@ -6,6 +6,8 @@ import {
   WhatsAppSession,
   autoStartPersistedSessions,
 } from './whatsapp.session';
+import { ContactsService } from '../contacts/contacts.service';
+import { FlowExecutorService, FlowSendFn } from '../flow-builder/flow-executor.service';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -16,12 +18,43 @@ export class WhatsAppService implements OnModuleInit {
   private readonly logger = new Logger(WhatsAppService.name);
   private io: Namespace;
 
+  constructor(
+    private readonly contactsService: ContactsService,
+    private readonly flowExecutor: FlowExecutorService,
+  ) {}
+
   setIo(io: Namespace) {
     this.io = io;
   }
+
   autoStart(io: Namespace) {
-    autoStartPersistedSessions(io as any);
+    // Re-implemented here instead of calling autoStartPersistedSessions
+    // so we can attach the flow callback to every auto-started session
+    const waDir = require('path').join(process.cwd(), 'data', 'wa');
+    const fs = require('fs');
+    if (!fs.existsSync(waDir)) return;
+
+    const userDirs: string[] = fs.readdirSync(waDir);
+    for (const userIdStr of userDirs) {
+      const userId = parseInt(userIdStr);
+      if (isNaN(userId)) continue;
+      const userPath = require('path').join(waDir, userIdStr);
+      const profileDirs: string[] = fs.readdirSync(userPath);
+      for (const profileId of profileDirs) {
+        const sessionPath = require('path').join(userPath, profileId, 'session');
+        if (fs.existsSync(sessionPath)) {
+          this.logger.log(`[AUTO-START] Restoring session userId=${userId} profileId=${profileId}`);
+          const s = getSession(userId, profileId, io as any);
+          // ✅ Attach flow callback BEFORE starting
+          s.onIncomingMessage = async (chatId, body, contactName, contactPhone) => {
+            await this.triggerFlowForMessage(userId, profileId, chatId, body, contactName, contactPhone);
+          };
+          s.start();
+        }
+      }
+    }
   }
+
   onModuleInit() {}
 
   private session(userId: number, profileId: string): WhatsAppSession {
@@ -32,6 +65,12 @@ export class WhatsAppService implements OnModuleInit {
   start(userId: number, profileId: string) {
     const s = this.session(userId, profileId);
     if (s.client) return { success: false, message: 'Already running' };
+
+    // Attach flow trigger callback before starting
+    s.onIncomingMessage = async (chatId, body, contactName, contactPhone) => {
+      await this.triggerFlowForMessage(userId, profileId, chatId, body, contactName, contactPhone);
+    };
+
     s.start();
     return { success: true };
   }
@@ -429,6 +468,79 @@ export class WhatsAppService implements OnModuleInit {
     s.broadcast('chats', s.buildChatList());
   }
 
+  // ── Flow Builder integration ─────────────────────────────────────────────
+  /**
+   * Called by WhatsAppSession on every incoming message.
+   * Tries to match and execute an active flow for this user.
+   * Returns true if a flow handled the message (so session can skip normal processing if needed).
+   */
+  async triggerFlowForMessage(
+    userId: number,
+    profileId: string,
+    chatId: string,
+    body: string,
+    contactName?: string,
+    contactPhone?: string,
+  ): Promise<boolean> {
+    try {
+      const s = findSession(userId, profileId);
+      if (!s) {
+        this.logger.warn(`[FlowTrigger] No session found for userId=${userId}`);
+        return false;
+      }
+      if (!s.isConnected()) {
+        this.logger.warn(`[FlowTrigger] Session not connected for userId=${userId}`);
+        return false;
+      }
+
+      this.logger.log(`[FlowTrigger] Processing message userId=${userId} chatId=${chatId} body="${body}"`);
+
+      const sender: FlowSendFn = {
+        sendText: async (to: string, message: string) => {
+          await s.client!.sendMessage(to, message);
+        },
+        sendButtons: async (to: string, message: string, buttons: any[]) => {
+          // whatsapp-web.js buttons message
+          try {
+            const { Buttons } = require('whatsapp-web.js');
+            const btns = buttons.map((b: any) => ({ body: b.text ?? b.id }));
+            const btnMsg = new Buttons(message, btns);
+            await s.client!.sendMessage(to, btnMsg);
+          } catch {
+            // Fallback: send as plain text with numbered options
+            const text = `${message}\n\n${buttons.map((b: any, i: number) => `${i + 1}. ${b.text ?? b.id}`).join('\n')}`;
+            await s.client!.sendMessage(to, text);
+          }
+        },
+        sendList: async (to: string, message: string, sections: any[], buttonText?: string) => {
+          try {
+            const { List } = require('whatsapp-web.js');
+            const listMsg = new List(message, buttonText ?? 'Select', sections);
+            await s.client!.sendMessage(to, listMsg);
+          } catch {
+            // Fallback: send as plain text
+            let text = `${message}\n`;
+            for (const section of sections) {
+              text += `\n*${section.title}*\n`;
+              for (const row of section.rows ?? []) {
+                text += `• ${row.title}${row.description ? ` — ${row.description}` : ''}\n`;
+              }
+            }
+            await s.client!.sendMessage(to, text);
+          }
+        },
+      };
+
+      return await this.flowExecutor.handleIncomingMessage(
+        { chatId, body, contactName, contactPhone, userId },
+        sender,
+      );
+    } catch (err: any) {
+      this.logger.error(`[FlowTrigger] Error: ${err.message}`);
+      return false;
+    }
+  }
+
   // ── Send ────────────────────────────────────────────────────────────────────
   async sendText(
     userId: number,
@@ -480,6 +592,124 @@ export class WhatsAppService implements OnModuleInit {
       }));
   }
 
+  /** Get full contact info for a specific phone number or WA id */
+  async getContactInfo(userId: number, profileId: string, phoneOrId: string): Promise<any> {
+    const s = this.requireConnected(userId, profileId);
+
+    // Normalise to WA id format
+    const waId = phoneOrId.includes('@')
+      ? phoneOrId
+      : `${phoneOrId.replace(/[^0-9]/g, '')}@c.us`;
+
+    try {
+      const contact = await s.client!.getContactById(waId);
+      const profilePicUrl = await contact.getProfilePicUrl().catch(() => null);
+
+      return {
+        id: contact.id._serialized,
+        number: contact.number,
+        name: contact.name || null,
+        pushname: contact.pushname || null,
+        displayName: contact.name || contact.pushname || contact.number,
+        isMyContact: contact.isMyContact,
+        isWAContact: contact.isWAContact,
+        isGroup: contact.isGroup,
+        isBlocked: contact.isBlocked,
+        isBusiness: (contact as any).isBusiness ?? false,
+        profilePicUrl: profilePicUrl || null,
+      };
+    } catch (err: any) {
+      this.logger.warn(`[CONTACT] getContactById failed for ${waId}: ${err.message}`);
+      return null;
+    }
+  }
+
+  /** Check if a phone number is registered on WhatsApp */
+  async lookupNumber(userId: number, profileId: string, phone: string): Promise<any> {
+    const s = this.requireConnected(userId, profileId);
+    const digits = phone.replace(/[^0-9]/g, '');
+
+    try {
+      const numberId = await s.client!.getNumberId(digits);
+      if (!numberId) return { phone: digits, isOnWhatsApp: false };
+
+      // If registered, also fetch contact details
+      const info = await this.getContactInfo(userId, profileId, numberId._serialized);
+      return { phone: digits, isOnWhatsApp: true, contact: info };
+    } catch (err: any) {
+      this.logger.warn(`[CONTACT] lookupNumber failed for ${digits}: ${err.message}`);
+      return { phone: digits, isOnWhatsApp: false, error: err.message };
+    }
+  }
+
+  // ── Send to contact from contacts table ────────────────────────────────────
+
+  async sendToContact(
+    userId: number,
+    profileId: string,
+    contactId: number,
+    message: string,
+  ): Promise<{ success: boolean; to: string; contactName: string }> {
+    const contact = await this.contactsService.findOne(userId, contactId);
+
+    if (!contact.phoneNumber) {
+      throw new BadRequestException(`Contact "${contact.name}" has no phone number saved`);
+    }
+
+    const digits = contact.phoneNumber.replace(/[^0-9]/g, '');
+    if (!digits) {
+      throw new BadRequestException(`Contact "${contact.name}" has an invalid phone number`);
+    }
+
+    // Verify the number is on WhatsApp before sending
+    const s = this.requireConnected(userId, profileId);
+    const numberId = await s.client!.getNumberId(digits);
+    if (!numberId) {
+      throw new BadRequestException(
+        `${contact.name}'s number (${contact.phoneNumber}) is not registered on WhatsApp`,
+      );
+    }
+
+    await s.client!.sendMessage(numberId._serialized, message);
+    this.logger.log(`[CONTACT-SEND] Sent text to contactId=${contactId} (${digits})`);
+
+    return { success: true, to: digits, contactName: contact.name };
+  }
+
+  async sendTemplateToContact(
+    userId: number,
+    profileId: string,
+    contactId: number,
+    templateId: number,
+    params: Record<string, string> = {},
+  ): Promise<{ success: boolean; to: string; contactName: string; messageIds: string[] }> {
+    const contact = await this.contactsService.findOne(userId, contactId);
+
+    if (!contact.phoneNumber) {
+      throw new BadRequestException(`Contact "${contact.name}" has no phone number saved`);
+    }
+
+    const digits = contact.phoneNumber.replace(/[^0-9]/g, '');
+    if (!digits) {
+      throw new BadRequestException(`Contact "${contact.name}" has an invalid phone number`);
+    }
+
+    // Verify on WhatsApp
+    const s = this.requireConnected(userId, profileId);
+    const isRegistered = await s.client!.isRegisteredUser(`${digits}@c.us`);
+    if (!isRegistered) {
+      throw new BadRequestException(
+        `${contact.name}'s number (${contact.phoneNumber}) is not registered on WhatsApp`,
+      );
+    }
+
+    this.logger.log(`[CONTACT-SEND] Sending template #${templateId} to contactId=${contactId} (${digits})`);
+
+    // Delegate to WaQrTemplateService via the session
+    // We return the phone so the caller can invoke template send
+    return { success: true, to: `${digits}@c.us`, contactName: contact.name, messageIds: [] };
+  }
+
   getAvatarPath(
     userId: number,
     profileId: string,
@@ -509,6 +739,9 @@ export class WhatsAppService implements OnModuleInit {
       for (const profileId of profileIds[userId] || []) {
         const s = this.session(userId, profileId);
         if (s.hasSession()) {
+          s.onIncomingMessage = async (chatId, body, contactName, contactPhone) => {
+            await this.triggerFlowForMessage(userId, profileId, chatId, body, contactName, contactPhone);
+          };
           console.log(`[WA] Auto-starting ${userId}/${profileId}`);
           s.start();
         }

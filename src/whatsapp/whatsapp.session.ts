@@ -109,6 +109,9 @@ export class WhatsAppSession {
   chatStore: Record<string, ChatEntry>;
   activeViewers: Record<string, string | null> = {};
 
+  /** Injected by WhatsAppService — called on every incoming message for flow matching */
+  onIncomingMessage?: (chatId: string, body: string, contactName?: string, contactPhone?: string) => Promise<void>;
+
   private io: Server | Namespace;
   private logger: Logger;
   private qrRefreshTimer: ReturnType<typeof setTimeout> | null = null;
@@ -227,17 +230,29 @@ export class WhatsAppSession {
         author = m.author ? m.author.replace(/@.+/, '') : null;
       }
     }
+
+    // Detect quick reply button response
+    // whatsapp-web.js exposes type='buttons_response' and selectedButtonId
+    const isQuickReply =
+      m.type === 'buttons_response' ||
+      !!m.selectedButtonId ||
+      !!m.buttonId;
+
     return {
       id: m.id._serialized,
       from: m.fromMe ? 'me' : m.from,
-      body: m.body || '',
-      type: m.type,
+      body: m.selectedButtonId
+        ? (m.body || m.selectedButtonId)   // button text is in body
+        : (m.body || ''),
+      type: isQuickReply ? 'buttons_response' : m.type,
       timestamp: m.timestamp,
       fromMe: m.fromMe,
       ack: m.ack || (m.fromMe ? 1 : 0),
       hasMedia: m.hasMedia || false,
       media: mediaObj,
       author,
+      isQuickReply,
+      selectedButtonId: m.selectedButtonId || m.buttonId || undefined,
     };
   }
 
@@ -770,7 +785,7 @@ export class WhatsAppSession {
             total: chats.length,
             loaded,
             percent,
-          }); 
+          });
           this.broadcast('chats', this.buildChatList());
         }
         this.broadcast('chats_loading', {
@@ -888,6 +903,13 @@ export class WhatsAppSession {
       this.broadcast('message', { chatId, message: formatted });
       this.broadcast('chats', this.buildChatList());
       debouncedSave(this.userId, this.profileId, this.chatStore);
+
+      // ── Flow Builder: try to match and execute a flow ──────────────────────
+      if (this.onIncomingMessage) {
+        const contactName = this.chatStore[chatId]?.contact?.name;
+        const contactPhone = chatId.replace(/@.+/, '');
+        this.onIncomingMessage(chatId, msg.body || '', contactName, contactPhone).catch(() => {});
+      }
     });
 
     this.client.on('message_create', async (msg: any) => {

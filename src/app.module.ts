@@ -17,6 +17,11 @@ import { WhatsAppModule } from './whatsapp/whatsapp.module';
 import { ChatCustomizationModule } from './chat-customization/chat-customization.module';
 import { EmailTemplatesModule } from './email-templates/email-templates.module';
 import { EmailCampaignsModule } from './email-campaigns/email-campaigns.module';
+import { CampaignsModule } from './campaigns/campaigns.module';
+import { FlowBuilderModule } from './flow-builder/flow-builder.module';
+import { CurrencyModule } from './currency/currency.module';
+import { LanguageModule } from './language/language.module';
+import { QuickReplyModule } from './quick-reply/quick-reply.module';
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -46,6 +51,11 @@ import { EmailCampaignsModule } from './email-campaigns/email-campaigns.module';
     ChatCustomizationModule,
     EmailTemplatesModule,
     EmailCampaignsModule,
+    CampaignsModule,
+    FlowBuilderModule,
+    CurrencyModule,
+    LanguageModule,
+    QuickReplyModule,
   ],
   controllers: [AppController],
   providers: [AppService],

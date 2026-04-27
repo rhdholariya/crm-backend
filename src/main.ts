@@ -53,13 +53,14 @@ async function bootstrap() {
     prefix: '/uploads',
   });
   app.enableCors({
-    origin: '*',
+    origin: true, // reflects the request origin — avoids duplicate wildcard with proxy
     methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
     allowedHeaders: [
       'Content-Type',
       'Authorization',
       'ngrok-skip-browser-warning',
     ],
+    credentials: true,
   });
   app.setGlobalPrefix('api');
 
