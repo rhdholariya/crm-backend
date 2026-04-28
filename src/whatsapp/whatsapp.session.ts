@@ -5,7 +5,7 @@
   import { Server, Namespace } from 'socket.io';
   import { Logger } from '@nestjs/common';
   import { ChatEntry, ChatListItem, StoredMessage } from './whatsapp.types';
-  
+  const puppeteer = require('puppeteer');
   const DATA_DIR = process.env.DATA_DIR || path.join(process.cwd(), 'data');
   const PROFILE_ID = 'default';
   
