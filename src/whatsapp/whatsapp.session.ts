@@ -431,34 +431,21 @@
         'session',
       );
       const isProduction = process.env.NODE_ENV === 'production';
-  
+
       const puppeteerConfig: any = {
         headless: true,
+        executablePath: '/usr/bin/chromium',
         args: [
           '--no-sandbox',
           '--disable-setuid-sandbox',
           '--disable-dev-shm-usage',
           '--disable-gpu',
-          '--no-first-run',
           '--no-zygote',
-          '--disable-features=site-per-process',
-          '--disable-dev-shm-usage',
           '--disable-extensions',
           '--disable-software-rasterizer',
           '--disable-background-networking',
-          '--disable-default-apps',
-          '--disable-sync',
-          '--disable-translate',
-          '--hide-scrollbars',
-          '--metrics-recording-only',
-          '--mute-audio',
-          '--safebrowsing-disable-auto-update',
-          '--ignore-certificate-errors',
-          '--ignore-ssl-errors',
-          '--ignore-certificate-errors-spki-list',
-          ...(isProduction ? ['--disable-web-security'] : []),
+          '--disable-features=site-per-process',
         ],
-        ...(isProduction && { timeout: 60000 }),
       };
   
       /*if (process.env.PUPPETEER_EXECUTABLE_PATH) {
