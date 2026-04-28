@@ -434,7 +434,7 @@
 
       const puppeteerConfig: any = {
         headless: true,
-        executablePath: '/usr/bin/chromium',
+        executablePath: puppeteer.executablePath(), // ← IMPORTANT
         args: [
           '--no-sandbox',
           '--disable-setuid-sandbox',
