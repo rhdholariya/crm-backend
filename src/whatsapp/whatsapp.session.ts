@@ -5,7 +5,8 @@
   import { Server, Namespace } from 'socket.io';
   import { Logger } from '@nestjs/common';
   import { ChatEntry, ChatListItem, StoredMessage } from './whatsapp.types';
-  const puppeteer = require('puppeteer');
+  import chromium from '@sparticuz/chromium';
+  import puppeteer from 'puppeteer-core';
   const DATA_DIR = process.env.DATA_DIR || path.join(process.cwd(), 'data');
   const PROFILE_ID = 'default';
   
@@ -434,33 +435,8 @@
 
       const puppeteerConfig: any = {
         headless: true,
-        executablePath: process.env.PUPPETEER_EXECUTABLE_PATH,
-        args: [
-          '--no-sandbox',
-          '--disable-setuid-sandbox',
-          '--disable-dev-shm-usage',
-          '--disable-gpu',
-          '--no-first-run',
-          '--no-zygote',
-          '--disable-features=site-per-process',
-          '--disable-dev-shm-usage',
-          '--disable-extensions',
-          '--disable-software-rasterizer',
-          '--disable-background-networking',
-          '--disable-default-apps',
-          '--disable-sync',
-          '--disable-translate',
-          '--hide-scrollbars',
-          '--metrics-recording-only',
-          '--mute-audio',
-          '--safebrowsing-disable-auto-update',
-          '--ignore-certificate-errors',
-          '--ignore-ssl-errors',
-          '--ignore-certificate-errors-spki-list',
-          ...(isProduction ? ['--disable-web-security'] : []),
-          '--disable-features=site-per-process',
-        ],
-        ...(isProduction && { timeout: 60000 }),
+        executablePath: chromium.executablePath(),
+        args: chromium.args,
       };
   
       /*if (process.env.PUPPETEER_EXECUTABLE_PATH) {
