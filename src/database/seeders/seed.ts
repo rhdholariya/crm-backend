@@ -3,7 +3,6 @@ import { Role } from '../../roles/entities/role.entity';
 import { User } from '../../users/entities/user.entity';
 import * as bcrypt from 'bcryptjs';
 import { seedFeatures } from './features.seed';
-import { seedFlowBuilder } from './flow-builder.seed';
 import { seedCurrencies } from './currency.seed';
 import { seedLanguages } from './language.seed';
 
@@ -45,7 +44,6 @@ export async function seed(dataSource: DataSource) {
   }
 
   await seedFeatures(dataSource);
-  await seedFlowBuilder(dataSource);
   await seedCurrencies(dataSource);
   await seedLanguages(dataSource);
 }
