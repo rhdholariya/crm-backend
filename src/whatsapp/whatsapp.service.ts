@@ -8,6 +8,8 @@ import {
 } from './whatsapp.session';
 import { ContactsService } from '../contacts/contacts.service';
 import { FlowExecutorService, FlowSendFn } from '../flow-builder/flow-executor.service';
+import { FlowStatus } from '../flow-builder/entities/flow.entity';
+import { AiChatbotService } from '../ai-chatbot/ai-chatbot.service';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -21,6 +23,7 @@ export class WhatsAppService implements OnModuleInit {
   constructor(
     private readonly contactsService: ContactsService,
     private readonly flowExecutor: FlowExecutorService,
+    private readonly aiChatbot: AiChatbotService,
   ) {}
 
   setIo(io: Namespace) {
@@ -483,6 +486,20 @@ export class WhatsAppService implements OnModuleInit {
     contactPhone?: string,
   ): Promise<boolean> {
     try {
+      // Ignore WhatsApp internal system messages
+      if (
+        !body ||
+        body.trim() === '' ||
+        body.endsWith('@lid') ||
+        body.endsWith('@c.us') ||
+        body.endsWith('@g.us') ||
+        body.endsWith('@s.whatsapp.net') ||
+        body.startsWith('e2e_notification') ||
+        body.startsWith('ciphertext')
+      ) {
+        this.logger.log(`[FlowTrigger] Skipping system message: "${body}"`);
+        return false;
+      }
       const s = findSession(userId, profileId);
       if (!s) {
         this.logger.warn(`[FlowTrigger] No session found for userId=${userId}`);
@@ -531,10 +548,36 @@ export class WhatsAppService implements OnModuleInit {
         },
       };
 
-      return await this.flowExecutor.handleIncomingMessage(
+      const flowHandled = await this.flowExecutor.handleIncomingMessage(
         { chatId, body, contactName, contactPhone, userId },
         sender,
       );
+
+      // Run AI reply if:
+      // 1. No flow handled the message at all, OR
+      // 2. The matched flow was an any_message flow (just a pass-through for AI)
+      const shouldAiReply = !flowHandled || await this.isAnyMessageFlow(userId);
+
+      if (shouldAiReply) {
+        try {
+          const settings = await this.aiChatbot['getRawSettings'](userId);
+          if (settings.autoReplyEnabled && settings.apiKey) {
+            const { reply } = await this.aiChatbot.autoReply(userId, {
+              message: body,
+              contactId: chatId,
+            });
+            const s2 = findSession(userId, profileId);
+            if (s2?.isConnected()) {
+              await s2.client!.sendMessage(chatId, reply);
+              this.logger.log(`[AI-REPLY] Sent AI reply to chatId=${chatId}`);
+            }
+          }
+        } catch (aiErr: any) {
+          this.logger.warn(`[AI-REPLY] Failed: ${aiErr.message}`);
+        }
+      }
+
+      return flowHandled;
     } catch (err: any) {
       this.logger.error(`[FlowTrigger] Error: ${err.message}`);
       return false;
@@ -746,6 +789,20 @@ export class WhatsAppService implements OnModuleInit {
           s.start();
         }
       }
+    }
+  }
+
+  // Returns true if any active any_message flow exists for this user
+  private async isAnyMessageFlow(userId: number): Promise<boolean> {
+    try {
+      const flowService = (this.flowExecutor as any).flowService;
+      if (!flowService?.flowRepo) return false;
+      const count = await flowService.flowRepo.count({
+        where: { userId, status: FlowStatus.ACTIVE, triggerType: 'any_message' },
+      });
+      return count > 0;
+    } catch {
+      return false;
     }
   }
 

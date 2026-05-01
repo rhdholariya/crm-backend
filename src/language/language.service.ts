@@ -9,6 +9,8 @@ import { Repository } from 'typeorm';
 import { Language } from './entities/language.entity';
 import { CreateLanguageDto } from './dto/create-language.dto';
 import { UpdateLanguageDto } from './dto/update-language.dto';
+import { TranslationsService } from '../translations/translations.service';
+import { getDefaultKeysMap } from '../translations/default-keys';
 
 const ADMIN_ROLE_ID = 1;
 
@@ -25,6 +27,7 @@ export class LanguageService {
   constructor(
     @InjectRepository(Language)
     private readonly repo: Repository<Language>,
+    private readonly translationsService: TranslationsService,
   ) {}
 
   // Admin only — create
@@ -36,20 +39,47 @@ export class LanguageService {
     });
     if (existing) throw new ConflictException(`Language code "${dto.code}" already exists`);
 
-    return this.repo.save(
+    const language = await this.repo.save(
       this.repo.create({ ...dto, code: dto.code.toLowerCase() }),
     );
+
+    // Auto-insert default translation keys for this new language
+    try {
+      const defaultKeys = getDefaultKeysMap();
+      await this.translationsService.bulkUpsert(ADMIN_ROLE_ID, {
+        languageCode: language.code,
+        translations: defaultKeys,
+      });
+      console.log(`✓ Default translation keys inserted for language: ${language.code}`);
+    } catch (error) {
+      console.error(`Failed to insert default translation keys for ${language.code}:`, error);
+      // Don't throw — language was created successfully, just log the error
+    }
+
+    return language;
   }
 
-  // All users — paginated (admin sees all, users see active only)
-  async findAll(roleId: number, page = 1, limit = 10): Promise<PaginatedLanguages> {
-    const where = roleId === ADMIN_ROLE_ID ? {} : { isActive: true };
-    const [data, total] = await this.repo.findAndCount({
-      where,
-      order: { name: 'ASC' },
-      skip: (page - 1) * limit,
-      take: limit,
-    });
+  // All users — paginated + search by name or code
+  async findAll(roleId: number, page = 1, limit = 10, search?: string): Promise<PaginatedLanguages> {
+    const qb = this.repo.createQueryBuilder('language');
+
+    // Base condition — non-admins only see active languages
+    if (roleId !== ADMIN_ROLE_ID) {
+      qb.where('language.isActive = :isActive', { isActive: true });
+    }
+
+    // Search filter — always use andWhere so it stacks on top of base condition
+    if (search) {
+      const term = `%${search.toLowerCase()}%`;
+      qb.andWhere('(LOWER(language.name) LIKE :term OR LOWER(language.code) LIKE :term)', { term });
+    }
+
+    const [data, total] = await qb
+      .orderBy('language.name', 'ASC')
+      .skip((page - 1) * limit)
+      .take(limit)
+      .getManyAndCount();
+
     return { data, total, page, limit, totalPages: Math.ceil(total / limit) };
   }
 

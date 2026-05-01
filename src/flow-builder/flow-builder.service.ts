@@ -664,7 +664,13 @@ export class FlowBuilderService {
       relations: ['nodes'],
     });
 
-    for (const flow of activeFlows) {
+    // keyword / button_reply flows first, any_message flows last
+    const sorted = [...activeFlows].sort((a, b) => {
+      const priority = (t: string) => (t === 'any_message' ? 1 : 0);
+      return priority(a.triggerType) - priority(b.triggerType);
+    });
+
+    for (const flow of sorted) {
       const triggerNode = flow.nodes?.find((n) => n.type === NodeType.TRIGGER);
       if (!triggerNode) continue;
 

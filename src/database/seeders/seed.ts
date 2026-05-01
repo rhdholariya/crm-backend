@@ -6,6 +6,7 @@ import { seedFeatures } from './features.seed';
 import { seedFlowBuilder } from './flow-builder.seed';
 import { seedCurrencies } from './currency.seed';
 import { seedLanguages } from './language.seed';
+import { seedTranslationKeys } from './translation-keys.seed';
 
 export async function seed(dataSource: DataSource) {
   const roleRepo = dataSource.getRepository(Role);
@@ -48,4 +49,5 @@ export async function seed(dataSource: DataSource) {
   await seedFlowBuilder(dataSource);
   await seedCurrencies(dataSource);
   await seedLanguages(dataSource);
+  await seedTranslationKeys(dataSource);
 }

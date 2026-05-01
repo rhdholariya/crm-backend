@@ -932,6 +932,120 @@ export class PaymentsService {
     return this.invoiceRepo.find({ where: { userId } });
   }
 
+  // ─── Admin: all user payments (latest/newest first) ────────────────────────
+  async getAllPayments(
+    page = 1,
+    limit = 20,
+    status?: string,
+    type?: string,
+    search?: string,
+  ) {
+    const skip = (page - 1) * limit;
+
+    // Build query with filters
+    const qb = this.paymentRepo
+      .createQueryBuilder('p')
+      .innerJoin('users', 'u', 'u.id = p.userId')
+      .leftJoin('plans', 'pl', 'pl.id = p.planId')
+      .leftJoin('invoices', 'inv', 'inv.paymentId = p.id')
+      .select([
+        '"p"."id"                    AS "paymentId"',
+        '"p"."userId"                AS "userId"',
+        '"u"."firstName"           AS "firstName"',
+        '"u"."lastName"            AS "lastName"',
+        '"u"."email"                 AS "email"',
+        '"u"."phoneNumber"         AS "phoneNumber"',
+        '"p"."type"                  AS "type"',
+        '"p"."status"                AS "status"',
+        '"p"."amount"                AS "amount"',
+        '"pl"."id"                   AS "planId"',
+        '"pl"."name"                 AS "planName"',
+        '"inv"."id"                  AS "invoiceId"',
+        '"inv"."invoiceUrl"          AS "invoiceUrl"',
+        '"inv"."invoicePdf"          AS "invoicePdf"',
+        '"inv"."paidAt"              AS "paidAt"',
+      ])
+      .orderBy('"p"."id"', 'DESC'); // Latest/newest first (by ID descending)
+
+    // Apply filters
+    if (status) {
+      qb.andWhere('p.status = :status', { status });
+    }
+
+    if (type) {
+      qb.andWhere('p.type = :type', { type });
+    }
+
+    if (search) {
+      qb.andWhere(
+        `("u"."email" ILIKE :search OR "u"."firstName" ILIKE :search OR "u"."lastName" ILIKE :search OR "pl"."name" ILIKE :search)`,
+        { search: `%${search}%` },
+      );
+    }
+
+    const total = await qb.getCount();
+    const rows = await qb.offset(skip).limit(limit).getRawMany();
+
+    // Calculate summary stats
+    const allPayments = await this.paymentRepo.find();
+    const totalPayments = allPayments.length;
+    const successfulPayments = allPayments.filter(
+      (p) => p.status === PaymentStatus.SUCCESS,
+    ).length;
+    const failedPayments = allPayments.filter(
+      (p) => p.status === PaymentStatus.FAILED,
+    ).length;
+    const pendingPayments = allPayments.filter(
+      (p) => p.status === PaymentStatus.PENDING,
+    ).length;
+
+    // Calculate total revenue
+    const totalRevenue = allPayments
+      .filter((p) => p.status === PaymentStatus.SUCCESS)
+      .reduce((sum, p) => sum + Number(p.amount), 0);
+
+    // Format response data
+    const data = rows.map((r) => ({
+      paymentId: r.paymentId,
+      customer: {
+        id: r.userId,
+        name: `${r.firstName} ${r.lastName}`,
+        email: r.email,
+        phone: r.phoneNumber,
+      },
+      plan: {
+        id: r.planId,
+        name: r.planName,
+      },
+      payment: {
+        type: r.type,
+        status: r.status,
+        amount: r.amount,
+      },
+      invoice: {
+        id: r.invoiceId,
+        url: r.invoiceUrl,
+        pdf: r.invoicePdf,
+        paidAt: r.paidAt,
+      },
+    }));
+
+    return {
+      summary: {
+        totalPayments,
+        successfulPayments,
+        failedPayments,
+        pendingPayments,
+        totalRevenue,
+      },
+      data,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+    };
+  }
+
   async getBillingPortalUrl(userId: number): Promise<{ url: string }> {
     const user = await this.usersService.findOne(userId);
     if (!user?.stripeCustomerId) {

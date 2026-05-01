@@ -21,6 +21,7 @@ export enum RecipientType {
   ALL = 'all',
   SELECTED = 'selected',
   BY_TAGS = 'by_tags',
+  EXCLUDE_TAGS = 'exclude_tags',
 }
 
 @Entity('email_campaigns')
@@ -53,6 +54,13 @@ export class EmailCampaign {
 
   @Column({ type: 'simple-array', nullable: true })
   selectedTagIds: number[];
+
+  @Column({ type: 'simple-array', nullable: true })
+  excludeTagIds: number[];
+
+  /** Optional static params merged with contact fields during template rendering e.g. { "discount": "20" } */
+  @Column({ type: 'jsonb', nullable: true })
+  params: Record<string, string> | null;
 
   @Column({
     type: 'enum',

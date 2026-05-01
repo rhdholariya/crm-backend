@@ -22,6 +22,8 @@ import { FlowBuilderModule } from './flow-builder/flow-builder.module';
 import { CurrencyModule } from './currency/currency.module';
 import { LanguageModule } from './language/language.module';
 import { QuickReplyModule } from './quick-reply/quick-reply.module';
+import { TranslationsModule } from './translations/translations.module';
+import { AiChatbotModule } from './ai-chatbot/ai-chatbot.module';
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -56,6 +58,8 @@ import { QuickReplyModule } from './quick-reply/quick-reply.module';
     CurrencyModule,
     LanguageModule,
     QuickReplyModule,
+    TranslationsModule,
+    AiChatbotModule,
   ],
   controllers: [AppController],
   providers: [AppService],

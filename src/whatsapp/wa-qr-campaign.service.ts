@@ -40,6 +40,7 @@ export class WaQrCampaignService {
     recipientType: WaRecipientType,
     selectedContactIds?: number[],
     selectedTagIds?: number[],
+    excludeTagIds?: number[],
   ): Promise<Contact[]> {
     const qb = this.contactRepo
       .createQueryBuilder('contact')
@@ -58,6 +59,16 @@ export class WaQrCampaignService {
       qb.leftJoin('contact.tags', 'filterTag').andWhere(
         'filterTag.id IN (:...tagIds)', { tagIds: selectedTagIds },
       );
+    } else if (recipientType === WaRecipientType.EXCLUDE_TAGS) {
+      if (!excludeTagIds?.length)
+        throw new BadRequestException('excludeTagIds required for EXCLUDE_TAGS type');
+      const subQuery = this.contactRepo
+        .createQueryBuilder('c2')
+        .select('c2.id')
+        .innerJoin('c2.tags', 'exTag')
+        .where('exTag.id IN (:...excludeTagIds)', { excludeTagIds });
+      qb.andWhere(`contact.id NOT IN (${subQuery.getQuery()})`)
+        .setParameters(subQuery.getParameters());
     }
 
     return qb.distinct(true).getMany();
@@ -79,6 +90,7 @@ export class WaQrCampaignService {
         recipientType: dto.recipientType,
         selectedContactIds: dto.selectedContactIds ?? [],
         selectedTagIds: dto.selectedTagIds ?? [],
+        excludeTagIds: dto.excludeTagIds ?? [],
         params: dto.params ?? null,
         scheduledAt: isScheduled ? new Date(dto.scheduledAt!) : null,
         status: isScheduled ? WaCampaignStatus.SCHEDULED : WaCampaignStatus.DRAFT,
@@ -159,6 +171,7 @@ export class WaQrCampaignService {
       campaign.recipientType,
       campaign.selectedContactIds?.filter(Boolean).map(Number),
       campaign.selectedTagIds?.filter(Boolean).map(Number),
+      campaign.excludeTagIds?.filter(Boolean).map(Number),
     );
 
     if (!contacts.length) {

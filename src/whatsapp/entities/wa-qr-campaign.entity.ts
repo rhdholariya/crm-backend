@@ -21,6 +21,7 @@ export enum WaRecipientType {
   ALL = 'all',
   SELECTED = 'selected',
   BY_TAGS = 'by_tags',
+  EXCLUDE_TAGS = 'exclude_tags',
 }
 
 @Entity('wa_qr_campaigns')
@@ -49,6 +50,9 @@ export class WaQrCampaign {
 
   @Column({ type: 'simple-array', nullable: true })
   selectedTagIds: number[];
+
+  @Column({ type: 'simple-array', nullable: true })
+  excludeTagIds: number[];
 
   /** Optional static params applied to all recipients e.g. { "discount": "20" } */
   @Column({ type: 'jsonb', nullable: true })

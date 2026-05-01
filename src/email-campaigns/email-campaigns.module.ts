@@ -22,5 +22,6 @@ import { MailService } from '../common/services/mail.service';
   ],
   controllers: [EmailCampaignsController],
   providers: [EmailCampaignsService, EmailCampaignsScheduler, MailService],
+  exports: [EmailCampaignsService],
 })
 export class EmailCampaignsModule {}

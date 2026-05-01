@@ -31,14 +31,15 @@ export class LanguageController {
     return successResponse('Language created successfully', language);
   }
 
-  // GET /api/languages?page=1&limit=10 — all users
+  // GET /api/languages?page=1&limit=10&search=hindi — all users
   @Get()
   async findAll(
     @CurrentUser() user: AuthUser,
     @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
     @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number,
+    @Query('search') search?: string,
   ) {
-    const result = await this.languageService.findAll(user.roleId, page, limit);
+    const result = await this.languageService.findAll(user.roleId, page, limit, search);
     return successResponse('Languages fetched successfully', result);
   }
 

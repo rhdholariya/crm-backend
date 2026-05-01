@@ -19,6 +19,7 @@ import { WaQrCampaignScheduler } from './wa-qr-campaign.scheduler';
 import { ContactsModule } from '../contacts/contacts.module';
 import { Contact } from '../contacts/entities/contact.entity';
 import { FlowBuilderModule } from '../flow-builder/flow-builder.module';
+import { AiChatbotModule } from '../ai-chatbot/ai-chatbot.module';
 
 @Module({
   imports: [
@@ -33,6 +34,7 @@ import { FlowBuilderModule } from '../flow-builder/flow-builder.module';
     ]),
     ContactsModule,
     FlowBuilderModule,
+    AiChatbotModule,
   ],
   controllers: [WhatsAppController, WhatsAppMetaController, WaQrTemplateController, WaQrCampaignController],
   providers: [WhatsAppService, WhatsAppGateway, WhatsAppMetaService, WaQrTemplateService, WaQrCampaignService, WaQrCampaignScheduler],

@@ -8,9 +8,23 @@ import {
   IsDateString,
   IsObject,
 } from 'class-validator';
-import { WaRecipientType } from '../entities/wa-qr-campaign.entity';
 
-export class CreateWaCampaignDto {
+export enum CampaignType {
+  EMAIL = 'email',
+  WHATSAPP = 'whatsapp',
+}
+
+export enum UnifiedRecipientType {
+  ALL = 'all',
+  SELECTED = 'selected',
+  BY_TAGS = 'by_tags',
+  EXCLUDE_TAGS = 'exclude_tags',
+}
+
+export class CreateUnifiedCampaignDto {
+  @IsEnum(CampaignType)
+  type: CampaignType;
+
   @IsString()
   @IsNotEmpty()
   name: string;
@@ -18,8 +32,8 @@ export class CreateWaCampaignDto {
   @IsNumber()
   templateId: number;
 
-  @IsEnum(WaRecipientType)
-  recipientType: WaRecipientType;
+  @IsEnum(UnifiedRecipientType)
+  recipientType: UnifiedRecipientType;
 
   @IsArray()
   @IsNumber({}, { each: true })
@@ -31,23 +45,23 @@ export class CreateWaCampaignDto {
   @IsOptional()
   selectedTagIds?: number[];
 
+  /** Contacts whose tags match ANY of these IDs will be excluded */
   @IsArray()
   @IsNumber({}, { each: true })
   @IsOptional()
   excludeTagIds?: number[];
 
-  /** Static params applied to all recipients. {{name}} is always auto-filled per contact. */
+  /** WhatsApp only: static params merged with contact fields */
   @IsObject()
   @IsOptional()
   params?: Record<string, string>;
 
-  /** If provided, campaign is scheduled; otherwise sent immediately */
   @IsDateString()
   @IsOptional()
   scheduledAt?: string;
 }
 
-export class UpdateWaCampaignDto {
+export class UpdateUnifiedCampaignDto {
   @IsString()
   @IsOptional()
   name?: string;
@@ -56,9 +70,9 @@ export class UpdateWaCampaignDto {
   @IsOptional()
   templateId?: number;
 
-  @IsEnum(WaRecipientType)
+  @IsEnum(UnifiedRecipientType)
   @IsOptional()
-  recipientType?: WaRecipientType;
+  recipientType?: UnifiedRecipientType;
 
   @IsArray()
   @IsNumber({}, { each: true })
@@ -70,6 +84,7 @@ export class UpdateWaCampaignDto {
   @IsOptional()
   selectedTagIds?: number[];
 
+  /** Contacts whose tags match ANY of these IDs will be excluded */
   @IsArray()
   @IsNumber({}, { each: true })
   @IsOptional()

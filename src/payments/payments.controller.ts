@@ -126,4 +126,28 @@ export class PaymentsController {
     const result = await this.paymentsService.getAllCustomerPlans(page, limit, search);
     return successResponse('Customer plans fetched successfully', result);
   }
+
+  // Admin — all user payments (latest/newest first)
+  @UseGuards(JwtAuthGuard)
+  @Get('admin/all-payments')
+  async adminAllPayments(
+    @CurrentUser() user: AuthUser,
+    @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
+    @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit: number,
+    @Query('status') status?: string,
+    @Query('type') type?: string,
+    @Query('search') search?: string,
+  ) {
+    if (user.roleId !== 1) {
+      return successResponse('Forbidden', null);
+    }
+    const result = await this.paymentsService.getAllPayments(
+      page,
+      limit,
+      status,
+      type,
+      search,
+    );
+    return successResponse('All payments fetched successfully', result);
+  }
 }

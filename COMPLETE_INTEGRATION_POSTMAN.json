@@ -1,0 +1,329 @@
+{
+  "info": {
+    "name": "AI Chatbot + Flow Builder + WhatsApp Integration",
+    "description": "Complete API collection for AI Chatbot, Flow Builder, and WhatsApp integration",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Authentication",
+      "item": [
+        {
+          "name": "Login",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@example.com\",\n  \"password\": \"Admin@123\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/auth/login",
+              "host": ["{{base_url}}"],
+              "path": ["api", "auth", "login"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Phase 1: AI Chatbot Setup",
+      "item": [
+        {
+          "name": "1.1 Configure AI Provider",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"model\": \"gpt-4o\",\n  \"provider\": \"openai\",\n  \"apiKey\": \"sk-proj-xxxxxxxxxxxxx\",\n  \"autoReplyEnabled\": true,\n  \"systemPrompt\": \"You are a helpful e-commerce customer support assistant. Be professional and empathetic.\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/ai-chatbot/settings",
+              "host": ["{{base_url}}"],
+              "path": ["api", "ai-chatbot", "settings"]
+            }
+          }
+        },
+        {
+          "name": "1.2 Test AI Connection",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/ai-chatbot/settings/test",
+              "host": ["{{base_url}}"],
+              "path": ["api", "ai-chatbot", "settings", "test"]
+            }
+          }
+        },
+        {
+          "name": "1.3 Get AI Settings",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/ai-chatbot/settings",
+              "host": ["{{base_url}}"],
+              "path": ["api", "ai-chatbot", "settings"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Phase 2: Flow Builder Setup",
+      "item": [
+        {
+          "name": "2.1 Create Flow",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"AI-Powered Support Flow\",\n  \"triggerType\": \"keyword\",\n  \"triggerConfig\": {\n    \"keywords\": [\"help\", \"support\", \"issue\", \"problem\"],\n    \"matchMode\": \"contains\"\n  },\n  \"description\": \"Automated support with AI chatbot integration\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/flows",
+              "host": ["{{base_url}}"],
+              "path": ["api", "flows"]
+            }
+          }
+        },
+        {
+          "name": "2.2 Save Flow Graph",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"AI-Powered Support Flow\",\n  \"nodes\": [\n    {\n      \"id\": \"trigger-1\",\n      \"type\": \"trigger\",\n      \"position\": { \"x\": 250, \"y\": 50 },\n      \"data\": {\n        \"label\": \"Support Trigger\",\n        \"keywords\": [\"help\", \"support\", \"issue\", \"problem\"],\n        \"matchMode\": \"contains\"\n      }\n    },\n    {\n      \"id\": \"understand-1\",\n      \"type\": \"webhookCall\",\n      \"position\": { \"x\": 250, \"y\": 200 },\n      \"data\": {\n        \"label\": \"Analyze with AI\",\n        \"url\": \"http://localhost:3000/api/ai-chatbot/understand\",\n        \"method\": \"POST\",\n        \"headers\": {\n          \"Authorization\": \"Bearer {{ai_token}}\",\n          \"Content-Type\": \"application/json\"\n        },\n        \"body\": \"{\\\"message\\\": \\\"{{message}}\\\"}\",\n        \"saveResponseAs\": \"analysis\"\n      }\n    },\n    {\n      \"id\": \"condition-1\",\n      \"type\": \"condition\",\n      \"position\": { \"x\": 250, \"y\": 380 },\n      \"data\": {\n        \"label\": \"Sentiment Check\",\n        \"field\": \"analysis.sentiment\",\n        \"operator\": \"equals\",\n        \"value\": \"negative\"\n      }\n    },\n    {\n      \"id\": \"ai-reply-1\",\n      \"type\": \"webhookCall\",\n      \"position\": { \"x\": 100, \"y\": 560 },\n      \"data\": {\n        \"label\": \"Generate AI Reply\",\n        \"url\": \"http://localhost:3000/api/ai-chatbot/auto-reply\",\n        \"method\": \"POST\",\n        \"headers\": {\n          \"Authorization\": \"Bearer {{ai_token}}\",\n          \"Content-Type\": \"application/json\"\n        },\n        \"body\": \"{\\\"message\\\": \\\"{{message}}\\\", \\\"contactId\\\": \\\"{{contact.phone}}\\\"}\",\n        \"saveResponseAs\": \"aiResponse\"\n      }\n    },\n    {\n      \"id\": \"send-ai-1\",\n      \"type\": \"sendMessage\",\n      \"position\": { \"x\": 100, \"y\": 730 },\n      \"data\": {\n        \"label\": \"Send AI Reply\",\n        \"message\": \"{{aiResponse.reply}}\"\n      }\n    },\n    {\n      \"id\": \"assign-1\",\n      \"type\": \"assignAgent\",\n      \"position\": { \"x\": 100, \"y\": 900 },\n      \"data\": {\n        \"label\": \"Escalate to Agent\",\n        \"team\": \"support-team\",\n        \"priority\": \"high\"\n      }\n    },\n    {\n      \"id\": \"suggest-1\",\n      \"type\": \"webhookCall\",\n      \"position\": { \"x\": 400, \"y\": 560 },\n      \"data\": {\n        \"label\": \"Get Suggestions\",\n        \"url\": \"http://localhost:3000/api/ai-chatbot/suggest-replies\",\n        \"method\": \"POST\",\n        \"headers\": {\n          \"Authorization\": \"Bearer {{ai_token}}\",\n          \"Content-Type\": \"application/json\"\n        },\n        \"body\": \"{\\\"customerMessage\\\": \\\"{{message}}\\\"}\",\n        \"saveResponseAs\": \"suggestions\"\n      }\n    },\n    {\n      \"id\": \"send-suggestions-1\",\n      \"type\": \"sendButtons\",\n      \"position\": { \"x\": 400, \"y\": 730 },\n      \"data\": {\n        \"label\": \"Send Suggestions\",\n        \"message\": \"Here are some suggested responses:\",\n        \"buttons\": [\n          { \"id\": \"btn1\", \"text\": \"{{suggestions.suggestions[0]}}\" },\n          { \"id\": \"btn2\", \"text\": \"{{suggestions.suggestions[1]}}\" },\n          { \"id\": \"btn3\", \"text\": \"{{suggestions.suggestions[2]}}\" }\n        ]\n      }\n    },\n    {\n      \"id\": \"tag-1\",\n      \"type\": \"addTag\",\n      \"position\": { \"x\": 250, \"y\": 1050 },\n      \"data\": {\n        \"label\": \"Tag as Supported\",\n        \"tagName\": \"ai-supported\"\n      }\n    },\n    {\n      \"id\": \"end-1\",\n      \"type\": \"end\",\n      \"position\": { \"x\": 250, \"y\": 1200 },\n      \"data\": { \"label\": \"End\" }\n    }\n  ],\n  \"edges\": [\n    { \"id\": \"e1\", \"source\": \"trigger-1\", \"target\": \"understand-1\", \"sourceHandle\": null, \"targetHandle\": null, \"type\": \"default\", \"data\": {}, \"label\": \"\", \"markerEnd\": \"arrowclosed\", \"style\": { \"strokeWidth\": 2 }, \"animated\": false },\n    { \"id\": \"e2\", \"source\": \"understand-1\", \"target\": \"condition-1\", \"sourceHandle\": null, \"targetHandle\": null, \"type\": \"default\", \"data\": {}, \"label\": \"\", \"markerEnd\": \"arrowclosed\", \"style\": { \"strokeWidth\": 2 }, \"animated\": false },\n    { \"id\": \"e3\", \"source\": \"condition-1\", \"target\": \"ai-reply-1\", \"sourceHandle\": \"yes\", \"targetHandle\": null, \"type\": \"default\", \"data\": {}, \"label\": \"Negative\", \"markerEnd\": \"arrowclosed\", \"style\": { \"strokeWidth\": 2 }, \"animated\": false },\n    { \"id\": \"e4\", \"source\": \"condition-1\", \"target\": \"suggest-1\", \"sourceHandle\": \"no\", \"targetHandle\": null, \"type\": \"default\", \"data\": {}, \"label\": \"Positive/Neutral\", \"markerEnd\": \"arrowclosed\", \"style\": { \"strokeWidth\": 2 }, \"animated\": false },\n    { \"id\": \"e5\", \"source\": \"ai-reply-1\", \"target\": \"send-ai-1\", \"sourceHandle\": null, \"targetHandle\": null, \"type\": \"default\", \"data\": {}, \"label\": \"\", \"markerEnd\": \"arrowclosed\", \"style\": { \"strokeWidth\": 2 }, \"animated\": false },\n    { \"id\": \"e6\", \"source\": \"send-ai-1\", \"target\": \"assign-1\", \"sourceHandle\": null, \"targetHandle\": null, \"type\": \"default\", \"data\": {}, \"label\": \"\", \"markerEnd\": \"arrowclosed\", \"style\": { \"strokeWidth\": 2 }, \"animated\": false },\n    { \"id\": \"e7\", \"source\": \"suggest-1\", \"target\": \"send-suggestions-1\", \"sourceHandle\": null, \"targetHandle\": null, \"type\": \"default\", \"data\": {}, \"label\": \"\", \"markerEnd\": \"arrowclosed\", \"style\": { \"strokeWidth\": 2 }, \"animated\": false },\n    { \"id\": \"e8\", \"source\": \"assign-1\", \"target\": \"tag-1\", \"sourceHandle\": null, \"targetHandle\": null, \"type\": \"default\", \"data\": {}, \"label\": \"\", \"markerEnd\": \"arrowclosed\", \"style\": { \"strokeWidth\": 2 }, \"animated\": false },\n    { \"id\": \"e9\", \"source\": \"send-suggestions-1\", \"target\": \"tag-1\", \"sourceHandle\": null, \"targetHandle\": null, \"type\": \"default\", \"data\": {}, \"label\": \"\", \"markerEnd\": \"arrowclosed\", \"style\": { \"strokeWidth\": 2 }, \"animated\": false },\n    { \"id\": \"e10\", \"source\": \"tag-1\", \"target\": \"end-1\", \"sourceHandle\": null, \"targetHandle\": null, \"type\": \"default\", \"data\": {}, \"label\": \"\", \"markerEnd\": \"arrowclosed\", \"style\": { \"strokeWidth\": 2 }, \"animated\": false }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/flows/{{flow_id}}/graph",
+              "host": ["{{base_url}}"],
+              "path": ["api", "flows", "{{flow_id}}", "graph"]
+            }
+          }
+        },
+        {
+          "name": "2.3 Validate Flow",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/flows/{{flow_id}}/validate",
+              "host": ["{{base_url}}"],
+              "path": ["api", "flows", "{{flow_id}}", "validate"]
+            }
+          }
+        },
+        {
+          "name": "2.4 Simulate Flow",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"triggerMessage\": \"help\",\n  \"contactPhone\": \"+919824160403\",\n  \"variables\": {\n    \"contact\": {\n      \"name\": \"Rahul\",\n      \"phone\": \"+919824160403\",\n      \"email\": \"rahul@example.com\"\n    }\n  }\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/flows/{{flow_id}}/simulate",
+              "host": ["{{base_url}}"],
+              "path": ["api", "flows", "{{flow_id}}", "simulate"]
+            }
+          }
+        },
+        {
+          "name": "2.5 Activate Flow",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"status\": \"active\" }"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/flows/{{flow_id}}/status",
+              "host": ["{{base_url}}"],
+              "path": ["api", "flows", "{{flow_id}}", "status"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Phase 3: WhatsApp Connection",
+      "item": [
+        {
+          "name": "3.1 Start WhatsApp Session",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/whatsapp/start",
+              "host": ["{{base_url}}"],
+              "path": ["api", "whatsapp", "start"]
+            }
+          }
+        },
+        {
+          "name": "3.2 Get QR Code",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/whatsapp/qr",
+              "host": ["{{base_url}}"],
+              "path": ["api", "whatsapp", "qr"]
+            }
+          }
+        },
+        {
+          "name": "3.3 Check WhatsApp Status",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/whatsapp/status",
+              "host": ["{{base_url}}"],
+              "path": ["api", "whatsapp", "status"]
+            }
+          }
+        },
+        {
+          "name": "3.4 Get Chats",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/whatsapp/chats",
+              "host": ["{{base_url}}"],
+              "path": ["api", "whatsapp", "chats"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Phase 4: Test End-to-End",
+      "item": [
+        {
+          "name": "4.1 Get Flow Analytics",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/flows/{{flow_id}}/analytics?days=7",
+              "host": ["{{base_url}}"],
+              "path": ["api", "flows", "{{flow_id}}", "analytics"],
+              "query": [\n                {\n                  \"key\": \"days\",\n                  \"value\": \"7\"\n                }\n              ]\n            }\n          }\n        },\n        {\n          \"name\": \"4.2 Get Execution History\",\n          \"request\": {\n            \"method\": \"GET\",\n            \"header\": [\n              {\n                \"key\": \"Authorization\",\n                \"value\": \"Bearer {{jwt_token}}\",\n                \"type\": \"text\"\n              }\n            ],\n            \"url\": {\n              \"raw\": \"{{base_url}}/api/flows/{{flow_id}}/executions?page=1&limit=20\",\n              \"host\": [\"{{base_url}}\"],\n              \"path\": [\"api\", \"flows\", \"{{flow_id}}\", \"executions\"],\n              \"query\": [\n                {\n                  \"key\": \"page\",\n                  \"value\": \"1\"\n                },\n                {\n                  \"key\": \"limit\",\n                  \"value\": \"20\"\n                }\n              ]\n            }\n          }\n        },\n        {\n          \"name\": \"4.3 Get Execution Details\",\n          \"request\": {\n            \"method\": \"GET\",\n            \"header\": [\n              {\n                \"key\": \"Authorization\",\n                \"value\": \"Bearer {{jwt_token}}\",\n                \"type\": \"text\"\n              }\n            ],\n            \"url\": {\n              \"raw\": \"{{base_url}}/api/flows/executions/{{execution_id}}\",\n              \"host\": [\"{{base_url}}\"],\n              \"path\": [\"api\", \"flows\", \"executions\", \"{{execution_id}}\"]\n            }\n          }\n        }\n      ]\n    },\n    {\n      \"name\": \"AI Chatbot Features\",\n      \"item\": [\n        {\n          \"name\": \"Generate Auto Reply\",\n          \"request\": {\n            \"method\": \"POST\",\n            \"header\": [\n              {\n                \"key\": \"Authorization\",\n                \"value\": \"Bearer {{jwt_token}}\",\n                \"type\": \"text\"\n              },\n              {\n                \"key\": \"Content-Type\",\n                \"value\": \"application/json\",\n                \"type\": \"text\"\n              }\n            ],\n            \"body\": {\n              \"mode\": \"raw\",\n              \"raw\": \"{\n  \\\"message\\\": \\\"My product arrived broken!\\\",\n  \\\"contactId\\\": \\\"917234567890@c.us\\\"\n}\"\n            },\n            \"url\": {\n              \"raw\": \"{{base_url}}/api/ai-chatbot/auto-reply\",\n              \"host\": [\"{{base_url}}\"],\n              \"path\": [\"api\", \"ai-chatbot\", \"auto-reply\"]\n            }\n          }\n        },\n        {\n          \"name\": \"Understand Message\",\n          \"request\": {\n            \"method\": \"POST\",\n            \"header\": [\n              {\n                \"key\": \"Authorization\",\n                \"value\": \"Bearer {{jwt_token}}\",\n                \"type\": \"text\"\n              },\n              {\n                \"key\": \"Content-Type\",\n                \"value\": \"application/json\",\n                \"type\": \"text\"\n              }\n            ],\n            \"body\": {\n              \"mode\": \"raw\",\n              \"raw\": \"{\n  \\\"message\\\": \\\"I'm very angry! My order is broken and your service is terrible!\\\"\n}\"\n            },\n            \"url\": {\n              \"raw\": \"{{base_url}}/api/ai-chatbot/understand\",\n              \"host\": [\"{{base_url}}\"],\n              \"path\": [\"api\", \"ai-chatbot\", \"understand\"]\n            }\n          }\n        },\n        {\n          \"name\": \"Suggest Replies\",\n          \"request\": {\n            \"method\": \"POST\",\n            \"header\": [\n              {\n                \"key\": \"Authorization\",\n                \"value\": \"Bearer {{jwt_token}}\",\n                \"type\": \"text\"\n              },\n              {\n                \"key\": \"Content-Type\",\n                \"value\": \"application/json\",\n                \"type\": \"text\"\n              }\n            ],\n            \"body\": {\n              \"mode\": \"raw\",\n              \"raw\": \"{\n  \\\"customerMessage\\\": \\\"When will my order arrive?\\\",\n  \\\"conversationContext\\\": \\\"Customer ordered on Jan 15, tracking shows in transit\\\"\n}\"\n            },\n            \"url\": {\n              \"raw\": \"{{base_url}}/api/ai-chatbot/suggest-replies\",\n              \"host\": [\"{{base_url}}\"],\n              \"path\": [\"api\", \"ai-chatbot\", \"suggest-replies\"]\n            }\n          }\n        },\n        {\n          \"name\": \"Get Conversations\",\n          \"request\": {\n            \"method\": \"GET\",\n            \"header\": [\n              {\n                \"key\": \"Authorization\",\n                \"value\": \"Bearer {{jwt_token}}\",\n                \"type\": \"text\"\n              }\n            ],\n            \"url\": {\n              \"raw\": \"{{base_url}}/api/ai-chatbot/conversations?page=1&limit=10\",\n              \"host\": [\"{{base_url}}\"],\n              \"path\": [\"api\", \"ai-chatbot\", \"conversations\"],\n              \"query\": [\n                {\n                  \"key\": \"page\",\n                  \"value\": \"1\"\n                },\n                {\n                  \"key\": \"limit\",\n                  \"value\": \"10\"\n                }\n              ]\n            }\n          }\n        }\n      ]\n    }\n  ],\n  \"variable\": [\n    {\n      \"key\": \"base_url\",\n      \"value\": \"https://5z5u7m.instatunnel.my\",\n      \"type\": \"string\"\n    },\n    {\n      \"key\": \"jwt_token\",\n      \"value\": \"YOUR_JWT_TOKEN_HERE\",\n      \"type\": \"string\"\n    },\n    {\n      \"key\": \"flow_id\",\n      \"value\": \"10\",\n      \"type\": \"string\"\n    },\n    {\n      \"key\": \"execution_id\",\n      \"value\": \"50\",\n      \"type\": \"string\"\n    },\n    {\n      \"key\": \"ai_token\",\n      \"value\": \"YOUR_AI_JWT_TOKEN\",\n      \"type\": \"string\"\n    }\n  ]\n}

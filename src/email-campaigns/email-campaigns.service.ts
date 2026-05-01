@@ -45,6 +45,7 @@ export class EmailCampaignsService {
     recipientType: RecipientType,
     selectedContactIds?: number[],
     selectedTagIds?: number[],
+    excludeTagIds?: number[],
   ): Promise<Contact[]> {
     const qb = this.contactRepo
       .createQueryBuilder('contact')
@@ -64,6 +65,17 @@ export class EmailCampaignsService {
         'filterTag.id IN (:...tagIds)',
         { tagIds: selectedTagIds },
       );
+    } else if (recipientType === RecipientType.EXCLUDE_TAGS) {
+      if (!excludeTagIds?.length)
+        throw new BadRequestException('excludeTagIds required for EXCLUDE_TAGS type');
+      // Exclude contacts that have ANY of the given tags
+      const subQuery = this.contactRepo
+        .createQueryBuilder('c2')
+        .select('c2.id')
+        .innerJoin('c2.tags', 'exTag')
+        .where('exTag.id IN (:...excludeTagIds)', { excludeTagIds });
+      qb.andWhere(`contact.id NOT IN (${subQuery.getQuery()})`)
+        .setParameters(subQuery.getParameters());
     }
 
     return qb.distinct(true).getMany();
@@ -74,13 +86,16 @@ export class EmailCampaignsService {
   private renderTemplate(
     template: EmailTemplate,
     contact: Contact,
+    extraParams?: Record<string, string> | null,
   ): { subject: string; body: string } {
+    // Contact fields are the base; extraParams override/extend them
     const values: Record<string, string> = {
       name: contact.name ?? '',
       email: contact.email ?? '',
       phoneNumber: contact.phoneNumber ?? '',
       phone: contact.phoneNumber ?? '',
       note: contact.note ?? '',
+      ...(extraParams ?? {}),
     };
 
     const replace = (text: string) =>
@@ -109,6 +124,8 @@ export class EmailCampaignsService {
         recipientType: dto.recipientType,
         selectedContactIds: dto.selectedContactIds ?? [],
         selectedTagIds: dto.selectedTagIds ?? [],
+        excludeTagIds: dto.excludeTagIds ?? [],
+        params: dto.params ?? null,
         scheduledAt,
         status: isScheduled ? CampaignStatus.SCHEDULED : CampaignStatus.DRAFT,
       }),
@@ -187,6 +204,7 @@ export class EmailCampaignsService {
       campaign.recipientType,
       campaign.selectedContactIds?.filter(Boolean).map(Number),
       campaign.selectedTagIds?.filter(Boolean).map(Number),
+      campaign.excludeTagIds?.filter(Boolean).map(Number),
     );
 
     // Build recipient rows
@@ -213,7 +231,7 @@ export class EmailCampaignsService {
 
     for (const recipient of recipients) {
       const contact = contacts.find((c) => c.id === recipient.contactId)!;
-      const { subject, body } = this.renderTemplate(template, contact);
+      const { subject, body } = this.renderTemplate(template, contact, campaign.params);
 
       try {
         await this.mailService.sendCampaignMail(recipient.email, subject, body, fromEmail);

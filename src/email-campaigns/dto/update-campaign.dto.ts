@@ -5,6 +5,7 @@ import {
   IsOptional,
   IsArray,
   IsDateString,
+  IsObject,
 } from 'class-validator';
 import { RecipientType } from '../entities/email-campaign.entity';
 
@@ -30,6 +31,15 @@ export class UpdateCampaignDto {
   @IsNumber({}, { each: true })
   @IsOptional()
   selectedTagIds?: number[];
+
+  @IsArray()
+  @IsNumber({}, { each: true })
+  @IsOptional()
+  excludeTagIds?: number[];
+
+  @IsObject()
+  @IsOptional()
+  params?: Record<string, string>;
 
   @IsDateString()
   @IsOptional()
