@@ -37,6 +37,9 @@ import { AiChatbotModule } from './ai-chatbot/ai-chatbot.module';
         autoLoadEntities: true,
         synchronize: true,
         logging: false,
+        ssl: {
+          rejectUnauthorized: false,
+        },
       }),
     }),
     DatabaseModule,

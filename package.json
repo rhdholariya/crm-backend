@@ -16,6 +16,7 @@
     "test": "jest",
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
+    "postinstall": "npx puppeteer browsers install chrome",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json"
   },
@@ -40,6 +41,7 @@
     "passport-local": "^1.0.0",
     "pg": "^8.20.0",
     "puppeteer": "^24.42.0",
+    "puppeteer-core": "^24.42.0",
     "qrcode": "^1.5.4",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",

@@ -6,7 +6,7 @@ import { Server, Namespace } from 'socket.io';
 import { Logger } from '@nestjs/common';
 import { ChatEntry, ChatListItem, StoredMessage } from './whatsapp.types';
 import chromium from '@sparticuz/chromium';
-import puppeteer from 'puppeteer-core';
+const puppeteer = require('puppeteer');
 const DATA_DIR = process.env.DATA_DIR || path.join(process.cwd(), 'data');
 const PROFILE_ID = 'default';
 
@@ -436,10 +436,71 @@ export class WhatsAppSession {
     );
     const isProduction = process.env.NODE_ENV === 'production';
 
+    function resolveChromiumPath(): string {
+      // 1. Env override (highest priority)
+      if (process.env.PUPPETEER_EXECUTABLE_PATH) {
+        return process.env.PUPPETEER_EXECUTABLE_PATH;
+      }
+      // 2. Puppeteer's auto-downloaded Chrome (via postinstall)
+      try {
+        const execPath = puppeteer.executablePath();
+        if (execPath && fs.existsSync(execPath)) return execPath;
+      } catch (_) {}
+
+      // 3. Common system paths fallback
+      const systemPaths = [
+        '/usr/bin/chromium',
+        '/usr/bin/chromium-browser',
+        '/usr/bin/google-chrome',
+        '/usr/bin/google-chrome-stable',
+      ];
+      for (const p of systemPaths) {
+        if (fs.existsSync(p)) return p;
+      }
+
+      throw new Error('Chromium not found. Run: npx puppeteer browsers install chrome');
+    }
+
+    let executablePath: string;
+    try {
+      executablePath = resolveChromiumPath();
+      this.logger.log(`[START] Chromium resolved at: ${executablePath}`);
+    } catch (err: any) {
+      this.logger.error(`[START] ${err.message}`);
+      this.status = 'disconnected';
+      this.broadcast('status', { status: 'error', message: err.message });
+      return;
+    }
+
     const puppeteerConfig: any = {
       headless: true,
-      executablePath: chromium.executablePath(),
-      args: chromium.args,
+      executablePath: executablePath,
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-gpu',
+        '--disable-gpu-sandbox',
+        '--no-first-run',
+        '--no-zygote',
+        '--disable-features=site-per-process',
+        '--disable-extensions',
+        '--disable-software-rasterizer',
+        '--disable-background-networking',
+        '--disable-default-apps',
+        '--disable-sync',
+        '--disable-translate',
+        '--hide-scrollbars',
+        '--metrics-recording-only',
+        '--mute-audio',
+        '--safebrowsing-disable-auto-update',
+        '--ignore-certificate-errors',
+        '--ignore-ssl-errors',
+        '--disable-web-security',
+        '--disable-features=VizDisplayCompositor',
+        '--run-all-compositor-stages-before-draw',
+      ],
+      ...(isProduction && { timeout: 60000 }),
     };
 
     /*if (process.env.PUPPETEER_EXECUTABLE_PATH) {
@@ -500,10 +561,13 @@ export class WhatsAppSession {
       puppeteer: puppeteerConfig,
       // Enable full history sync so older messages are available
       webVersionCache: {
-        type: 'remote',
-        remotePath:
-          'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.2412.54.html',
+        type: 'local', // ✅ caches after first load, no remote fetch every time
       },
+      // webVersionCache: {
+      //   type: 'remote',
+      //   remotePath:
+      //     'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.2412.54.html',
+      // },
     });
 
     // ── QR: refresh every time WhatsApp regenerates it ──────────────────────
