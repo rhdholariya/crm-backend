@@ -13,7 +13,13 @@ import { Server, Socket } from 'socket.io';
 import { findSession, getAllSessions } from './whatsapp.session';
 import { WhatsAppService } from './whatsapp.service';
 
-@WebSocketGateway({ cors: { origin: '*' }, namespace: 'whatsapp' })
+@WebSocketGateway({
+  cors: { origin: '*' },
+  namespace: 'whatsapp',
+  transports: ['websocket', 'polling'],
+  pingInterval: 25000,
+  pingTimeout: 60000,
+})
 export class WhatsAppGateway
   implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect
 {
