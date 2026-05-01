@@ -1,52 +1,5 @@
-<IfModule mod_rewrite.c>
-  RewriteEngine On
-  RewriteBase /
-
-  # Prevent direct access to files
-  RewriteCond %{REQUEST_FILENAME} !-f
-  RewriteCond %{REQUEST_FILENAME} !-d
-
-  # Allow WebSocket connections
-  RewriteCond %{HTTP:Upgrade} websocket [NC]
-  RewriteCond %{HTTP:Connection} upgrade [NC]
-  RewriteRule ^(.*)$ http://localhost:3000/$1 [P,L]
-
-  # Allow Socket.IO polling
-  RewriteCond %{REQUEST_URI} ^/socket.io [NC]
-  RewriteRule ^(.*)$ http://localhost:3000/$1 [P,L]
-
-  # Route all API requests to Node.js
-  RewriteCond %{REQUEST_URI} ^/api [NC]
-  RewriteRule ^(.*)$ http://localhost:3000/$1 [P,L]
-
-  # Route all other requests to Node.js (for SPA support if needed)
-  RewriteRule ^(.*)$ http://localhost:3000/$1 [P,L]
-</IfModule>
-
-# Enable mod_proxy
-<IfModule mod_proxy.c>
-  ProxyRequests Off
-  ProxyPreserveHost On
-  ProxyPassReverse / http://localhost:3000/
-</IfModule>
-
-# WebSocket support headers
-<IfModule mod_headers.c>
-  Header set Connection "upgrade"
-  Header set Upgrade "websocket"
-</IfModule>
-
-# Compression
-<IfModule mod_deflate.c>
-  AddOutputFilterByType DEFLATE text/html text/plain text/xml text/css text/javascript application/javascript application/json
-</IfModule>
-
-# Cache control
-<IfModule mod_expires.c>
-  ExpiresActive On
-  ExpiresByType text/html "access plus 0 seconds"
-  ExpiresByType application/json "access plus 0 seconds"
-  ExpiresByType application/javascript "access plus 1 year"
-  ExpiresByType text/css "access plus 1 year"
-  ExpiresByType image/* "access plus 1 year"
-</IfModule>
+DirectoryIndex disabled
+# Redirect traffic to your port 3000
+RewriteEngine On
+RewriteBase /
+RewriteRule ^(.*)?$ http://127.0.0.1:3000/$1 [P,L]
