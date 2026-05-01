@@ -2,17 +2,5 @@ services:
   - type: web
     name: crm-backend
     env: node
-    buildCommand: |
-      apt-get update && apt-get install -y \
-        google-chrome-stable \
-        fonts-ipafont-gothic \
-        fonts-wqy-zenhei \
-        libxss1 \
-        libgconf-2-4 \
-        --no-install-recommends && npm install && npm run build
+    buildCommand: npm install && npx puppeteer browsers install chrome && npm run build
     startCommand: npm run start:prod
-    envVars:
-      - key: PUPPETEER_SKIP_CHROMIUM_DOWNLOAD
-        value: "true"
-      - key: PUPPETEER_EXECUTABLE_PATH
-        value: /usr/bin/google-chrome-stable
