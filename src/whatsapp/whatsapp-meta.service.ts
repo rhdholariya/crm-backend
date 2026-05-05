@@ -12,6 +12,9 @@ import {
   TemplateType,
   TemplateStatus,
   TemplateCategory,
+  TemplateComponents,
+  HeaderFormat,
+  ButtonType,
 } from './entities/whatsapp-template.entity';
 import {
   WhatsAppMessage,
@@ -21,8 +24,12 @@ import {
 import { UpsertConfigDto } from './dto/upsert-config.dto';
 import { CreateTemplateDto } from './dto/create-template.dto';
 import { UpdateTemplateDto } from './dto/update-template.dto';
+import {
+  CreateMetaTemplateDto,
+  UpdateMetaTemplateDto,
+} from './dto/meta-template.dto';
 
-const META_API_VERSION = 'v19.0';
+const META_API_VERSION = 'v23.0';
 const META_BASE = `https://graph.facebook.com/${META_API_VERSION}`;
 
 @Injectable()
@@ -55,7 +62,7 @@ export class WhatsAppMetaService {
 
   private async requireConfig(userId: number): Promise<WhatsAppConfig> {
     const config = await this.getConfig(userId);
-    if (!config?.accessToken || !config?.phoneNumberId) {
+    if (!config?.accessToken || !config?.phoneNumberId || !config?.wabaId) {
       throw new BadRequestException(
         'Meta WhatsApp API not configured. Please set up your credentials first.',
       );
@@ -65,12 +72,14 @@ export class WhatsAppMetaService {
 
   // ── Templates ───────────────────────────────────────────────────────────────
 
-  /** Extract {{paramName}} placeholders from body */
-  private extractParams(body: string): string[] {
-    const matches = body.match(/\{\{(\w+)\}\}/g) || [];
+  /** Extract {{paramName}} placeholders from text */
+  private extractParams(text: string): string[] {
+    const matches = text.match(/\{\{(\w+)\}\}/g) || [];
     return [...new Set(matches.map((m) => m.replace(/\{\{|\}\}/g, '')))];
   }
 
+  /** Collect all parameters from all component text fields */
+  /** Build Meta API component payload from our component structure */
   async createRegularTemplate(
     userId: number,
     dto: CreateTemplateDto,
@@ -81,52 +90,43 @@ export class WhatsAppMetaService {
       name: dto.name,
       body: dto.body,
       language: dto.language || 'en',
-      headerText: dto.headerText,
-      footerText: dto.footerText,
       parameters: params,
       type: TemplateType.REGULAR,
-      status: TemplateStatus.APPROVED, // regular templates are immediately usable
+      status: TemplateStatus.APPROVED,
       category: dto.category,
+      components: [
+        {
+          type: 'BODY',
+          text: dto.body,
+        },
+      ] as any,
     });
     return this.templateRepo.save(template);
   }
 
   async createMetaTemplate(
     userId: number,
-    dto: CreateTemplateDto,
+    dto: CreateMetaTemplateDto,
   ): Promise<WhatsAppTemplate> {
     const config = await this.requireConfig(userId);
-    const params = this.extractParams(dto.body);
+    
+    // Extract body text and parameters from components
+    const bodyComponent = dto.components.find(c => c.type === 'BODY');
+    const bodyText = bodyComponent?.text || '';
+    const params = this.extractParams(bodyText);
 
-    // Build Meta API payload
-    const components: any[] = [];
-
-    if (dto.headerText) {
-      components.push({ type: 'HEADER', format: 'TEXT', text: dto.headerText });
-    }
-
-    // Body with numbered placeholders {{1}}, {{2}} for Meta API
-    // We store named params but Meta uses positional
-    let metaBody = dto.body;
-    const namedParams = this.extractParams(dto.body);
-    namedParams.forEach((p, i) => {
-      metaBody = metaBody.replace(new RegExp(`\\{\\{${p}\\}\\}`, 'g'), `{{${i + 1}}}`);
-    });
-
-    components.push({ type: 'BODY', text: metaBody });
-
-    if (dto.footerText) {
-      components.push({ type: 'FOOTER', text: dto.footerText });
-    }
-
+    // Build payload - components are already in correct format
     const payload = {
       name: dto.name.toLowerCase().replace(/\s+/g, '_'),
       language: dto.language || 'en',
+      parameter_format: 'NAMED',
       category: dto.category || TemplateCategory.UTILITY,
-      components,
+      components: dto.components,
     };
 
-    this.logger.log(`[META] Creating template "${payload.name}" for userId=${userId}`);
+    this.logger.log(
+      `[META] Creating template "${JSON.stringify(payload)}" for userId=${userId}`,
+    );
 
     const response = await fetch(
       `${META_BASE}/${config.wabaId}/message_templates`,
@@ -145,35 +145,107 @@ export class WhatsAppMetaService {
     if (!response.ok || data.error) {
       const errMsg = data.error?.message || 'Meta API error';
       this.logger.error(`[META] Template creation failed: ${errMsg}`);
-      throw new BadRequestException(`Meta API error: ${errMsg}`);
+      throw new BadRequestException(data);
     }
 
-    this.logger.log(`[META] Template created, id=${data.id} status=${data.status}`);
+    this.logger.log(
+      `[META] Template created, id=${data.id} status=${data.status}`,
+    );
 
     const template = this.templateRepo.create({
       userId,
       name: dto.name,
-      body: dto.body,
+      body: bodyText,
       language: dto.language || 'en',
-      headerText: dto.headerText,
-      footerText: dto.footerText,
       parameters: params,
       type: TemplateType.META,
       status: this.mapMetaStatus(data.status),
       category: dto.category || TemplateCategory.UTILITY,
+      components: dto.components as any,
       metaTemplateId: String(data.id),
     });
 
     return this.templateRepo.save(template);
   }
 
-  async syncMetaTemplateStatus(userId: number, templateId: number): Promise<WhatsAppTemplate> {
+  async updateMetaTemplate(
+    userId: number,
+    id: number,
+    dto: UpdateMetaTemplateDto,
+  ): Promise<WhatsAppTemplate> {
+    const template = await this.getTemplate(userId, id);
+
+    if (template.type !== TemplateType.META) {
+      throw new BadRequestException('Only Meta templates can be updated');
+    }
+
+    if (template.status !== TemplateStatus.DRAFT) {
+      throw new BadRequestException(
+        'Only draft templates can be updated. Approved/Rejected templates must be deleted and recreated.',
+      );
+    }
+
+    if (dto.category) {
+      template.category = dto.category;
+    }
+
+    if (dto.components) {
+      template.components = dto.components as any;
+      const bodyComponent = dto.components.find(c => c.type === 'BODY');
+      if (bodyComponent?.text) {
+        template.body = bodyComponent.text;
+        template.parameters = this.extractParams(bodyComponent.text);
+      }
+    }
+
+    return this.templateRepo.save(template);
+  }
+
+  async deleteMetaTemplate(userId: number, id: number): Promise<void> {
+    const template = await this.getTemplate(userId, id);
+
+    if (template.type !== TemplateType.META) {
+      throw new BadRequestException('Only Meta templates can be deleted via this endpoint');
+    }
+
+    // If it's approved/pending, delete from Meta too
+    if (
+      template.metaTemplateId &&
+      (template.status === TemplateStatus.APPROVED ||
+        template.status === TemplateStatus.PENDING)
+    ) {
+      try {
+        const config = await this.requireConfig(userId);
+        await fetch(
+          `${META_BASE}/${config.wabaId}/message_templates?hsm_id=${template.metaTemplateId}&name=${encodeURIComponent(
+            template.name.toLowerCase().replace(/\s+/g, '_'),
+          )}`,
+          {
+            method: 'DELETE',
+            headers: { Authorization: `Bearer ${config.accessToken}` },
+          },
+        );
+        this.logger.log(`[META] Deleted template from Meta: ${template.metaTemplateId}`);
+      } catch (err: any) {
+        this.logger.warn(
+          `[META] Could not delete template from Meta: ${err.message}`,
+        );
+      }
+    }
+
+    await this.templateRepo.remove(template);
+  }
+
+  async syncMetaTemplateStatus(
+    userId: number,
+    templateId: number,
+  ): Promise<WhatsAppTemplate> {
     const config = await this.requireConfig(userId);
-    const template = await this.templateRepo.findOne({
-      where: { id: templateId, userId },
-    });
-    if (!template) throw new NotFoundException('Template not found');
-    if (!template.metaTemplateId) throw new BadRequestException('Not a Meta template');
+    const template = await this.getTemplate(userId, templateId);
+
+    if (!template.metaTemplateId) {
+      throw new BadRequestException('Not a Meta template');
+    }
 
     const response = await fetch(
       `${META_BASE}/${template.metaTemplateId}?fields=status,rejected_reason`,
@@ -188,15 +260,63 @@ export class WhatsAppMetaService {
     }
 
     template.status = this.mapMetaStatus(data.status);
-    if (data.rejected_reason) template.rejectionReason = data.rejected_reason;
+    if (data.rejected_reason) {
+      template.rejectionReason = data.rejected_reason;
+    }
+
+    this.logger.log(
+      `[META] Synced template status: ${template.name} → ${template.status}`,
+    );
 
     return this.templateRepo.save(template);
   }
 
-  async listTemplates(userId: number, type?: TemplateType): Promise<WhatsAppTemplate[]> {
-    const where: any = { userId };
-    if (type) where.type = type;
-    return this.templateRepo.find({ where, order: { createdAt: 'DESC' } });
+  async listTemplates(
+    userId: number,
+    type?: TemplateType,
+    status?: TemplateStatus,
+    category?: TemplateCategory,
+    search?: string,
+    page = 1,
+    limit = 10,
+  ): Promise<{
+    data: WhatsAppTemplate[];
+    total: number;
+    page: number;
+    limit: number;
+    totalPages: number;
+  }> {
+    const qb = this.templateRepo.createQueryBuilder('t').where('t.userId = :userId', { userId });
+
+    if (type) {
+      qb.andWhere('t.type = :type', { type });
+    }
+
+    if (status) {
+      qb.andWhere('t.status = :status', { status });
+    }
+
+    if (category) {
+      qb.andWhere('t.category = :category', { category });
+    }
+
+    if (search) {
+      qb.andWhere('t.name ILIKE :search', { search: `%${search}%` });
+    }
+
+    const [data, total] = await qb
+      .orderBy('t.createdAt', 'DESC')
+      .skip((page - 1) * limit)
+      .take(limit)
+      .getManyAndCount();
+
+    return {
+      data,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+    };
   }
 
   async getTemplate(userId: number, id: number): Promise<WhatsAppTemplate> {
@@ -226,14 +346,18 @@ export class WhatsAppMetaService {
       try {
         const config = await this.requireConfig(userId);
         await fetch(
-          `${META_BASE}/${config.wabaId}/message_templates?hsm_id=${template.metaTemplateId}&name=${encodeURIComponent(template.name.toLowerCase().replace(/\s+/g, '_'))}`,
+          `${META_BASE}/${config.wabaId}/message_templates?hsm_id=${template.metaTemplateId}&name=${encodeURIComponent(
+            template.name.toLowerCase().replace(/\s+/g, '_'),
+          )}`,
           {
             method: 'DELETE',
             headers: { Authorization: `Bearer ${config.accessToken}` },
           },
         );
       } catch (err: any) {
-        this.logger.warn(`[META] Could not delete template from Meta: ${err.message}`);
+        this.logger.warn(
+          `[META] Could not delete template from Meta: ${err.message}`,
+        );
       }
     }
 
@@ -267,56 +391,59 @@ export class WhatsAppMetaService {
     userId: number,
     to: string,
     templateId: number,
-    params: Record<string, string> = {},
+    dynamicParameters?: Array<{ field: string; value: string }>,
   ): Promise<any> {
     const config = await this.requireConfig(userId);
     const template = await this.getTemplate(userId, templateId);
 
-    if (template.type === TemplateType.META && template.status !== TemplateStatus.APPROVED) {
+    if (template.type !== TemplateType.META) {
+      throw new BadRequestException('Only Meta templates can be sent via this endpoint');
+    }
+
+    if (template.status !== TemplateStatus.APPROVED) {
       throw new BadRequestException(
         `Template "${template.name}" is not approved (status: ${template.status})`,
       );
     }
 
+    // Convert dynamic parameters to key-value map
+    const paramsMap: Record<string, string> = {};
+    if (dynamicParameters && dynamicParameters.length > 0) {
+      dynamicParameters.forEach(param => {
+        paramsMap[param.field] = param.value;
+      });
+    }
+
     // Resolve body with params for DB storage
     let resolvedBody = template.body;
-    for (const [key, val] of Object.entries(params)) {
-      resolvedBody = resolvedBody.replace(new RegExp(`\\{\\{${key}\\}\\}`, 'g'), val);
+    for (const [key, val] of Object.entries(paramsMap)) {
+      resolvedBody = resolvedBody.replace(
+        new RegExp(`\\{\\{${key}\\}\\}`, 'g'),
+        val,
+      );
     }
 
-    let payload: any;
+    // Build named parameters for Meta API
+    const components: any[] = [];
+    const bodyParams = (template.parameters || []).map((p) => ({
+      type: 'text',
+      text: paramsMap[p] || `{{${p}}}`,
+    }));
 
-    if (template.type === TemplateType.META) {
-      // Build positional components for Meta API
-      const components: any[] = [];
-      const bodyParams = (template.parameters || []).map((p) => ({
-        type: 'text',
-        text: params[p] || `{{${p}}}`,
-      }));
-      if (bodyParams.length) {
-        components.push({ type: 'body', parameters: bodyParams });
-      }
-
-      payload = {
-        messaging_product: 'whatsapp',
-        to: this.normalizePhone(to),
-        type: 'template',
-        template: {
-          name: template.name.toLowerCase().replace(/\s+/g, '_'),
-          language: { code: template.language || 'en' },
-          components,
-        },
-      };
-    } else {
-      // Regular template — just send as plain text
-      payload = {
-        messaging_product: 'whatsapp',
-        recipient_type: 'individual',
-        to: this.normalizePhone(to),
-        type: 'text',
-        text: { preview_url: false, body: resolvedBody },
-      };
+    if (bodyParams.length) {
+      components.push({ type: 'body', parameters: bodyParams });
     }
+
+    const payload = {
+      messaging_product: 'whatsapp',
+      to: this.normalizePhone(to),
+      type: 'template',
+      template: {
+        name: template.name.toLowerCase().replace(/\s+/g, '_'),
+        language: { code: template.language || 'en' },
+        components,
+      },
+    };
 
     const result = await this.callSendApi(config, payload);
 
@@ -324,7 +451,7 @@ export class WhatsAppMetaService {
       userId,
       to,
       resolvedBody,
-      template.type === TemplateType.META ? 'template' : 'text',
+      'template',
       result?.messages?.[0]?.id,
       templateId,
     );

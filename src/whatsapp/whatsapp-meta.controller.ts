@@ -24,7 +24,13 @@ import { UpsertConfigDto } from './dto/upsert-config.dto';
 import { CreateTemplateDto } from './dto/create-template.dto';
 import { UpdateTemplateDto } from './dto/update-template.dto';
 import { SendMetaMessageDto } from './dto/send-meta-message.dto';
-import { TemplateType } from './entities/whatsapp-template.entity';
+import {
+  CreateMetaTemplateDto,
+  UpdateMetaTemplateDto,
+  SendMetaTemplateDto,
+  ListMetaTemplatesQueryDto,
+} from './dto/meta-template.dto';
+import { TemplateType, TemplateStatus, TemplateCategory } from './entities/whatsapp-template.entity';
 
 @Controller('whatsapp/meta')
 export class WhatsAppMetaController {
@@ -57,10 +63,18 @@ export class WhatsAppMetaController {
   @Get('templates')
   async listTemplates(
     @CurrentUser() user: AuthUser,
-    @Query('type') type?: TemplateType,
+    @Query() query: ListMetaTemplatesQueryDto,
   ) {
-    const templates = await this.metaService.listTemplates(user.id, type);
-    return successResponse('Templates', templates);
+    const result = await this.metaService.listTemplates(
+      user.id,
+      query.type as TemplateType,
+      query.status as TemplateStatus,
+      query.category as TemplateCategory,
+      query.search,
+      Number(query.page) || 1,
+      Number(query.limit) || 10,
+    );
+    return successResponse('Templates', result);
   }
 
   @UseGuards(JwtAuthGuard)
@@ -87,10 +101,34 @@ export class WhatsAppMetaController {
   @Post('templates/meta')
   async createMetaTemplate(
     @CurrentUser() user: AuthUser,
-    @Body() dto: CreateTemplateDto,
+    @Body() dto: CreateMetaTemplateDto,
   ) {
+    this.logger.log(`[API] POST /meta/templates/meta → userId=${user.id} name=${dto.name}`);
     const template = await this.metaService.createMetaTemplate(user.id, dto);
     return successResponse('Meta template submitted for approval', template);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Put('templates/:id')
+  async updateMetaTemplate(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: UpdateMetaTemplateDto,
+  ) {
+    this.logger.log(`[API] PUT /meta/templates/${id} → userId=${user.id}`);
+    const template = await this.metaService.updateMetaTemplate(user.id, id, dto);
+    return successResponse('Meta template updated', template);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Delete('templates/:id')
+  async deleteMetaTemplate(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseIntPipe) id: number,
+  ) {
+    this.logger.log(`[API] DELETE /meta/templates/${id} → userId=${user.id}`);
+    await this.metaService.deleteMetaTemplate(user.id, id);
+    return successResponse('Meta template deleted');
   }
 
   @UseGuards(JwtAuthGuard)
@@ -99,29 +137,9 @@ export class WhatsAppMetaController {
     @CurrentUser() user: AuthUser,
     @Param('id', ParseIntPipe) id: number,
   ) {
+    this.logger.log(`[API] POST /meta/templates/${id}/sync-status → userId=${user.id}`);
     const template = await this.metaService.syncMetaTemplateStatus(user.id, id);
     return successResponse('Template status synced', template);
-  }
-
-  @UseGuards(JwtAuthGuard)
-  @Put('templates/:id')
-  async updateTemplate(
-    @CurrentUser() user: AuthUser,
-    @Param('id', ParseIntPipe) id: number,
-    @Body() dto: UpdateTemplateDto,
-  ) {
-    const template = await this.metaService.updateTemplate(user.id, id, dto);
-    return successResponse('Template updated', template);
-  }
-
-  @UseGuards(JwtAuthGuard)
-  @Delete('templates/:id')
-  async deleteTemplate(
-    @CurrentUser() user: AuthUser,
-    @Param('id', ParseIntPipe) id: number,
-  ) {
-    await this.metaService.deleteTemplate(user.id, id);
-    return successResponse('Template deleted');
   }
 
   // ── Send Messages ───────────────────────────────────────────────────────────
@@ -146,7 +164,7 @@ export class WhatsAppMetaController {
   async sendTemplateMessage(
     @CurrentUser() user: AuthUser,
     @Param('templateId', ParseIntPipe) templateId: number,
-    @Body() body: { to: string; params?: Record<string, string> },
+    @Body() body: SendMetaTemplateDto,
   ) {
     this.logger.log(
       `[API] POST /meta/send/template/${templateId} → userId=${user.id} to=${body.to}`,
@@ -155,7 +173,7 @@ export class WhatsAppMetaController {
       user.id,
       body.to,
       templateId,
-      body.params || {},
+      body.dynamicParameters,
     );
     return successResponse('Template message sent', result);
   }

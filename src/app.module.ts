@@ -39,9 +39,9 @@ import { AgentsModule } from './agents/agents.module';
         autoLoadEntities: true,
         synchronize: true,
         logging: false,
-        ssl: {
-          rejectUnauthorized: false,
-        },
+        // ssl: {
+        //   rejectUnauthorized: false,
+        // },
       }),
     }),
     DatabaseModule,

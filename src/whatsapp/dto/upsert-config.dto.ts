@@ -1,6 +1,10 @@
 import { IsNotEmpty, IsOptional, IsString } from 'class-validator';
 
 export class UpsertConfigDto {
+  @IsOptional()
+  @IsString()
+  whatsAppAppId?: string;
+
   @IsNotEmpty()
   @IsString()
   accessToken: string;

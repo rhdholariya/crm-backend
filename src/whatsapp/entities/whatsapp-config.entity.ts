@@ -14,6 +14,10 @@ export class WhatsAppConfig {
   @Column({ unique: true })
   userId: number;
 
+  /** Meta App ID */
+  @Column({ nullable: true })
+  whatsAppAppId: string;
+
   /** Meta App access token (permanent or temporary) */
   @Column({ nullable: true })
   accessToken: string;

@@ -48,7 +48,7 @@
     "socket.io": "^4.8.3",
     "stripe": "^12.18.0",
     "typeorm": "^0.3.28",
-    "whatsapp-web.js": "^1.34.6"
+    "whatsapp-web.js": "^1.34.7"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.2.0",

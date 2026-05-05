@@ -24,6 +24,44 @@ export enum TemplateCategory {
   AUTHENTICATION = 'AUTHENTICATION',
 }
 
+export enum HeaderFormat {
+  NONE = 'NONE',
+  TEXT = 'TEXT',
+  IMAGE = 'IMAGE',
+  VIDEO = 'VIDEO',
+  DOCUMENT = 'DOCUMENT',
+}
+
+export enum ButtonType {
+  QUICK_REPLY = 'QUICK_REPLY',
+  URL = 'URL',
+  PHONE_NUMBER = 'PHONE_NUMBER',
+  COPY_CODE = 'COPY_CODE',
+}
+
+export interface TemplateHeader {
+  format: HeaderFormat;
+  text?: string; // For TEXT format
+  mediaUrl?: string; // For IMAGE, VIDEO, DOCUMENT
+  filename?: string; // For DOCUMENT
+}
+
+export interface TemplateButton {
+  type: ButtonType;
+  text: string;
+  url?: string; // For URL buttons
+  phoneNumber?: string; // For PHONE_NUMBER buttons
+  code?: string; // For COPY_CODE buttons
+}
+
+export interface TemplateComponents {
+  type: string; // "HEADER", "BODY", "FOOTER", "BUTTONS"
+  format?: HeaderFormat;
+  text?: string;
+  example?: any;
+  buttons?: any[];
+}
+
 @Entity('whatsapp_templates')
 export class WhatsAppTemplate {
   @PrimaryGeneratedColumn()
@@ -62,6 +100,10 @@ export class WhatsAppTemplate {
   })
   category: TemplateCategory;
 
+  /** Full component tree stored as JSON array — mirrors Meta API structure */
+  @Column({ type: 'jsonb', nullable: true })
+  components: TemplateComponents[];
+
   /** Meta template ID returned after submission */
   @Column({ nullable: true })
   metaTemplateId: string;
@@ -69,14 +111,6 @@ export class WhatsAppTemplate {
   /** Meta rejection reason if status = rejected */
   @Column({ type: 'text', nullable: true })
   rejectionReason: string;
-
-  /** Optional header text */
-  @Column({ nullable: true })
-  headerText: string;
-
-  /** Optional footer text */
-  @Column({ nullable: true })
-  footerText: string;
 
   @CreateDateColumn()
   createdAt: Date;
