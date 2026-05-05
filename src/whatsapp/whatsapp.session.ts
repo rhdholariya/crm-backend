@@ -5,8 +5,7 @@ import { Client, LocalAuth } from 'whatsapp-web.js';
 import { Server, Namespace } from 'socket.io';
 import { Logger } from '@nestjs/common';
 import { ChatEntry, ChatListItem, StoredMessage } from './whatsapp.types';
-import chromium from '@sparticuz/chromium';
-import puppeteer from 'puppeteer-core';
+
 const DATA_DIR = process.env.DATA_DIR || path.join(process.cwd(), 'data');
 const PROFILE_ID = 'default';
 
@@ -111,12 +110,7 @@ export class WhatsAppSession {
   activeViewers: Record<string, string | null> = {};
 
   /** Injected by WhatsAppService — called on every incoming message for flow matching */
-  onIncomingMessage?: (
-    chatId: string,
-    body: string,
-    contactName?: string,
-    contactPhone?: string,
-  ) => Promise<void>;
+  onIncomingMessage?: (chatId: string, body: string, contactName?: string, contactPhone?: string) => Promise<void>;
 
   private io: Server | Namespace;
   private logger: Logger;
@@ -240,14 +234,16 @@ export class WhatsAppSession {
     // Detect quick reply button response
     // whatsapp-web.js exposes type='buttons_response' and selectedButtonId
     const isQuickReply =
-      m.type === 'buttons_response' || !!m.selectedButtonId || !!m.buttonId;
+      m.type === 'buttons_response' ||
+      !!m.selectedButtonId ||
+      !!m.buttonId;
 
     return {
       id: m.id._serialized,
       from: m.fromMe ? 'me' : m.from,
       body: m.selectedButtonId
-        ? m.body || m.selectedButtonId // button text is in body
-        : m.body || '',
+        ? (m.body || m.selectedButtonId)   // button text is in body
+        : (m.body || ''),
       type: isQuickReply ? 'buttons_response' : m.type,
       timestamp: m.timestamp,
       fromMe: m.fromMe,
@@ -438,61 +434,68 @@ export class WhatsAppSession {
 
     const puppeteerConfig: any = {
       headless: true,
-      executablePath: chromium.executablePath(),
-      args: chromium.args,
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-gpu',
+        '--no-first-run',
+        '--no-zygote',
+        '--single-process',
+        '--disable-extensions',
+        '--disable-software-rasterizer',
+        '--disable-background-networking',
+        '--disable-default-apps',
+        '--disable-sync',
+        '--disable-translate',
+        '--hide-scrollbars',
+        '--metrics-recording-only',
+        '--mute-audio',
+        '--safebrowsing-disable-auto-update',
+        '--ignore-certificate-errors',
+        '--ignore-ssl-errors',
+        '--ignore-certificate-errors-spki-list',
+        ...(isProduction ? ['--disable-web-security'] : []),
+      ],
+      ...(isProduction && { timeout: 60000 }),
     };
 
-    /*if (process.env.PUPPETEER_EXECUTABLE_PATH) {
-        puppeteerConfig.executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
-        this.logger.log(`[START] Using Chromium at: ${process.env.PUPPETEER_EXECUTABLE_PATH}`);
-      } else {
-        // 1. Try Puppeteer's own bundled Chromium (downloaded via postinstall)
-        try {
-          const puppeteer = require('puppeteer');
-          const bundled = puppeteer.executablePath?.();
-          if (bundled && fs.existsSync(bundled)) {
-            puppeteerConfig.executablePath = bundled;
-            this.logger.log(`[START] Using Puppeteer bundled Chromium: ${bundled}`);
-          }
-        } catch (_) {}
-  
-        // 2. Fallback: auto-detect common system paths on Linux
-        if (!puppeteerConfig.executablePath) {
-          const chromiumPaths = [
-            '/usr/bin/google-chrome',
-            '/usr/bin/google-chrome-stable',
-            '/usr/bin/chromium',
-            '/usr/bin/chromium-browser',
-            '/snap/bin/chromium',
-            '/usr/lib/chromium-browser/chromium-browser',
-          ];
-          for (const p of chromiumPaths) {
-            if (fs.existsSync(p)) {
-              puppeteerConfig.executablePath = p;
-              this.logger.log(`[START] Auto-detected system Chromium: ${p}`);
-              break;
-            }
+    if (process.env.PUPPETEER_EXECUTABLE_PATH) {
+      puppeteerConfig.executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
+      this.logger.log(`[START] Using Chromium at: ${process.env.PUPPETEER_EXECUTABLE_PATH}`);
+    } else {
+      // 1. Try Puppeteer's own bundled Chromium (downloaded via postinstall)
+      try {
+        const puppeteer = require('puppeteer');
+        const bundled = puppeteer.executablePath?.();
+        if (bundled && fs.existsSync(bundled)) {
+          puppeteerConfig.executablePath = bundled;
+          this.logger.log(`[START] Using Puppeteer bundled Chromium: ${bundled}`);
+        }
+      } catch (_) {}
+
+      // 2. Fallback: auto-detect common system paths on Linux
+      if (!puppeteerConfig.executablePath) {
+        const chromiumPaths = [
+          '/usr/bin/google-chrome',
+          '/usr/bin/google-chrome-stable',
+          '/usr/bin/chromium',
+          '/usr/bin/chromium-browser',
+          '/snap/bin/chromium',
+          '/usr/lib/chromium-browser/chromium-browser',
+        ];
+        for (const p of chromiumPaths) {
+          if (fs.existsSync(p)) {
+            puppeteerConfig.executablePath = p;
+            this.logger.log(`[START] Auto-detected system Chromium: ${p}`);
+            break;
           }
         }
-        if (!puppeteerConfig.executablePath) {
-          this.logger.warn(`[START] No Chromium found — Puppeteer will use its default. If QR fails, set PUPPETEER_EXECUTABLE_PATH in .env`);
-        }
-      }*/
-
-    try {
-      const puppeteer = require('puppeteer');
-      const bundledPath = puppeteer.executablePath();
-
-      if (bundledPath && fs.existsSync(bundledPath)) {
-        puppeteerConfig.executablePath = bundledPath;
-        this.logger.log(
-          `[START] Using Puppeteer bundled Chromium: ${bundledPath}`,
-        );
-      } else {
-        throw new Error('Bundled Chromium not found');
       }
-    } catch (err: any) {
-      this.logger.error(`[START] Failed to resolve Chromium: ${err.message}`);
+
+      if (!puppeteerConfig.executablePath) {
+        this.logger.warn(`[START] No Chromium found — Puppeteer will use its default. If QR fails, set PUPPETEER_EXECUTABLE_PATH in .env`);
+      }
     }
 
     this.client = new Client({
@@ -668,7 +671,7 @@ export class WhatsAppSession {
                         while (
                           (msgStore.models?.length || 0) < lim &&
                           attempts < 8
-                        ) {
+                          ) {
                           const hasMore =
                             await S?.LoadChatMessages?.loadEarlierMsgs(chat);
                           if (!hasMore) break;
@@ -682,8 +685,8 @@ export class WhatsAppSession {
                             from: m.id?.fromMe
                               ? 'me'
                               : m.id?.remote?._serialized ||
-                                m.from?._serialized ||
-                                '',
+                              m.from?._serialized ||
+                              '',
                             body: m.body || m.caption || '',
                             type: m.type || 'chat',
                             timestamp: m.t || 0,
@@ -905,12 +908,7 @@ export class WhatsAppSession {
       if (this.onIncomingMessage) {
         const contactName = this.chatStore[chatId]?.contact?.name;
         const contactPhone = chatId.replace(/@.+/, '');
-        this.onIncomingMessage(
-          chatId,
-          msg.body || '',
-          contactName,
-          contactPhone,
-        ).catch(() => {});
+        this.onIncomingMessage(chatId, msg.body || '', contactName, contactPhone).catch(() => {});
       }
     });
 
@@ -1239,14 +1237,10 @@ export class WhatsAppSession {
       lastSeen: number | null;
     }) => void,
   ): Promise<() => void> {
-    this.logger.log(
-      `[PRESENCE] watchPresence called → chatId=${chatId} connected=${this.isConnected()}`,
-    );
+    this.logger.log(`[PRESENCE] watchPresence called → chatId=${chatId} connected=${this.isConnected()}`);
 
     if (!this.isConnected()) {
-      this.logger.warn(
-        `[PRESENCE] watchPresence aborted — session not connected`,
-      );
+      this.logger.warn(`[PRESENCE] watchPresence aborted — session not connected`);
       return () => {};
     }
 
@@ -1254,75 +1248,54 @@ export class WhatsAppSession {
 
     // Step 1: Subscribe to presence + always init __pw (even if subscribe fails)
     try {
-      const subResult = await (this.client as any).pupPage.evaluate(
-        async (cid: string) => {
-          const S = (window as any).Store;
+      const subResult = await (this.client as any).pupPage.evaluate(async (cid: string) => {
+        const S = (window as any).Store;
 
-          // Always init __pw first so poll never hits undefined
-          (window as any).__pw = (window as any).__pw || {};
-          (window as any).__pw[cid] = {
-            isOnline: null,
-            isTyping: null,
-            lastSeen: null,
-          };
+        // Always init __pw first so poll never hits undefined
+        (window as any).__pw = (window as any).__pw || {};
+        (window as any).__pw[cid] = { isOnline: null, isTyping: null, lastSeen: null };
 
-          if (!S) return { error: 'Store not found' };
+        if (!S) return { error: 'Store not found' };
 
-          const wid = S.WidFactory?.createWid(cid);
-          if (!wid) return { error: 'WidFactory failed to create wid' };
+        const wid = S.WidFactory?.createWid(cid);
+        if (!wid) return { error: 'WidFactory failed to create wid' };
 
-          // Wrap each subscribe attempt individually so one failure doesn't abort others
-          const trySubscribe = async (fn: any, label: string) => {
-            try {
-              if (typeof fn === 'function') {
-                await fn(wid);
-                return `${label}:ok`;
-              }
-              return `${label}:not_a_function`;
-            } catch (e: any) {
-              return `${label}:error(${e?.message})`;
+        // Wrap each subscribe attempt individually so one failure doesn't abort others
+        const trySubscribe = async (fn: any, label: string) => {
+          try {
+            if (typeof fn === 'function') {
+              await fn(wid);
+              return `${label}:ok`;
             }
-          };
+            return `${label}:not_a_function`;
+          } catch (e: any) {
+            return `${label}:error(${e?.message})`;
+          }
+        };
 
-          const results = await Promise.all([
-            trySubscribe(
-              S.PresenceUtils?.subscribe?.bind(S.PresenceUtils),
-              'PresenceUtils',
-            ),
-            trySubscribe(S.Presence?.subscribe?.bind(S.Presence), 'Presence'),
-            trySubscribe(
-              S.PresenceStore?.subscribe?.bind(S.PresenceStore),
-              'PresenceStore',
-            ),
-          ]);
+        const results = await Promise.all([
+          trySubscribe(S.PresenceUtils?.subscribe?.bind(S.PresenceUtils), 'PresenceUtils'),
+          trySubscribe(S.Presence?.subscribe?.bind(S.Presence), 'Presence'),
+          trySubscribe(S.PresenceStore?.subscribe?.bind(S.PresenceStore), 'PresenceStore'),
+        ]);
 
-          return {
-            wid: wid._serialized,
-            presenceUtils: !!S.PresenceUtils,
-            presence: !!S.Presence,
-            presenceStore: !!S.PresenceStore,
-            results,
-          };
-        },
-        chatId,
-      );
+        return {
+          wid: wid._serialized,
+          presenceUtils: !!S.PresenceUtils,
+          presence: !!S.Presence,
+          presenceStore: !!S.PresenceStore,
+          results,
+        };
+      }, chatId);
 
-      this.logger.log(
-        `[PRESENCE] Subscribe result for ${chatId}: ${JSON.stringify(subResult)}`,
-      );
+      this.logger.log(`[PRESENCE] Subscribe result for ${chatId}: ${JSON.stringify(subResult)}`);
     } catch (err: any) {
       // Even if evaluate itself throws, ensure __pw is seeded via a second evaluate
-      this.logger.warn(
-        `[PRESENCE] Subscribe step threw for ${chatId}: ${err.message} — seeding __pw fallback`,
-      );
+      this.logger.warn(`[PRESENCE] Subscribe step threw for ${chatId}: ${err.message} — seeding __pw fallback`);
       try {
         await (this.client as any).pupPage.evaluate((cid: string) => {
           (window as any).__pw = (window as any).__pw || {};
-          (window as any).__pw[cid] = {
-            isOnline: null,
-            isTyping: null,
-            lastSeen: null,
-          };
+          (window as any).__pw[cid] = { isOnline: null, isTyping: null, lastSeen: null };
         }, chatId);
       } catch (_) {}
     }
@@ -1352,20 +1325,15 @@ export class WhatsAppSession {
                 // __x_isOnline is unreliable — derive from chatstate instead
                 const chatstateObj = p?.__x_chatstate ?? p?.chatstate;
                 const chatstateStr = chatstateObj
-                  ? typeof chatstateObj === 'string'
+                  ? (typeof chatstateObj === 'string'
                     ? chatstateObj
-                    : (chatstateObj?.type ??
-                      chatstateObj?.stateType ??
-                      chatstateObj?.chatstate ??
-                      '')
+                    : (chatstateObj?.type ?? chatstateObj?.stateType ?? chatstateObj?.chatstate ?? ''))
                   : '';
 
                 // online = chatstate is 'available' OR __x_isOnline with hasData guard
-                const hasData = !!p?.__x_hasData;
-                const isOnline =
-                  chatstateStr === 'available' ||
-                  (hasData && !!p?.__x_isOnline);
-                const isTyping = chatstateStr === 'composing';
+                const hasData   = !!(p?.__x_hasData);
+                const isOnline  = chatstateStr === 'available' || (hasData && !!(p?.__x_isOnline));
+                const isTyping  = chatstateStr === 'composing';
                 const isRecording = chatstateStr === 'recording';
 
                 // typingUserIds / recordingUserIds for group chats
@@ -1373,84 +1341,50 @@ export class WhatsAppSession {
                 try {
                   const tIds = p?.__x_typingUserIds;
                   if (tIds && typeof tIds[Symbol.iterator] === 'function') {
-                    for (const id of tIds)
-                      typingIds.push(String(id?._serialized ?? id));
+                    for (const id of tIds) typingIds.push(String(id?._serialized ?? id));
                   }
                 } catch (_) {}
 
-                const lastSeen =
-                  Number(p?.t ?? p?.lastSeen ?? c?.lastSeen ?? 0) || null;
+                const lastSeen = Number(p?.t ?? p?.lastSeen ?? c?.lastSeen ?? 0) || null;
 
                 // Collect presence keys safely
                 let presenceKeys: string[] = [];
-                try {
-                  presenceKeys = p ? Object.keys(p) : [];
-                } catch (_) {}
+                try { presenceKeys = p ? Object.keys(p) : []; } catch (_) {}
 
                 const snapshot = {
-                  hasPresence: !!p,
-                  hasContact: !!c,
+                  hasPresence  : !!p,
+                  hasContact   : !!c,
                   hasData,
-                  chatstate: chatstateStr,
-                  presenceType: String(p?.type ?? ''),
+                  chatstate    : chatstateStr,
+                  presenceType : String(p?.type ?? ''),
                   presenceKeys,
                   isOnline,
                   isTyping,
                   isRecording,
-                  typingUsers: typingIds,
+                  typingUsers  : typingIds,
                   lastSeen,
                 };
 
                 // Ensure __pw entry exists
                 (window as any).__pw = (window as any).__pw || {};
-                (window as any).__pw[cid] = (window as any).__pw[cid] || {
-                  isOnline: null,
-                  isTyping: null,
-                  lastSeen: null,
-                };
+                (window as any).__pw[cid] = (window as any).__pw[cid] || { isOnline: null, isTyping: null, lastSeen: null };
                 const prev = (window as any).__pw[cid];
 
                 const changed =
-                  prev.isOnline !== isOnline ||
-                  prev.isTyping !== isTyping ||
+                  prev.isOnline    !== isOnline    ||
+                  prev.isTyping    !== isTyping    ||
                   prev.isRecording !== isRecording ||
-                  prev.lastSeen !== lastSeen ||
-                  JSON.stringify(prev.typingUsers ?? []) !==
-                    JSON.stringify(typingIds);
+                  prev.lastSeen    !== lastSeen    ||
+                  JSON.stringify(prev.typingUsers ?? []) !== JSON.stringify(typingIds);
 
                 if (changed) {
-                  (window as any).__pw[cid] = {
-                    isOnline,
-                    isTyping,
-                    isRecording,
-                    typingUsers: typingIds,
-                    lastSeen,
-                  };
+                  (window as any).__pw[cid] = { isOnline, isTyping, isRecording, typingUsers: typingIds, lastSeen };
                 }
 
                 // Always return plain object with only primitives/arrays
-                return JSON.parse(
-                  JSON.stringify({
-                    changed,
-                    chatId: cid,
-                    isOnline,
-                    isTyping,
-                    isRecording,
-                    typingUsers: typingIds,
-                    lastSeen,
-                    snapshot,
-                  }),
-                );
+                return JSON.parse(JSON.stringify({ changed, chatId: cid, isOnline, isTyping, isRecording, typingUsers: typingIds, lastSeen, snapshot }));
               } catch (e: any) {
-                return {
-                  error: String(e?.message),
-                  changed: false,
-                  chatId: cid,
-                  isOnline: false,
-                  isTyping: false,
-                  lastSeen: null,
-                  snapshot: null,
-                };
+                return { error: String(e?.message), changed: false, chatId: cid, isOnline: false, isTyping: false, lastSeen: null, snapshot: null };
               }
             },
             chatId,
@@ -1460,9 +1394,7 @@ export class WhatsAppSession {
 
           // Raw dump on first 3 polls to diagnose serialization
           if (pollCount <= 3) {
-            this.logger.log(
-              `[PRESENCE] Raw poll result #${pollCount} chatId=${chatId}: ${JSON.stringify(result)}`,
-            );
+            this.logger.log(`[PRESENCE] Raw poll result #${pollCount} chatId=${chatId}: ${JSON.stringify(result)}`);
           }
 
           // Log every 10th poll so we can confirm the loop is alive without flooding
@@ -1477,12 +1409,12 @@ export class WhatsAppSession {
               `[PRESENCE] ✅ CHANGE detected chatId=${chatId} online=${result.isOnline} typing=${result.isTyping} recording=${result.isRecording} typingUsers=${JSON.stringify(result.typingUsers)} lastSeen=${result.lastSeen}`,
             );
             onUpdate({
-              chatId: result.chatId,
-              isOnline: result.isOnline,
-              isTyping: result.isTyping,
-              isRecording: result.isRecording ?? false,
-              typingUsers: result.typingUsers ?? [],
-              lastSeen: result.lastSeen,
+              chatId      : result.chatId,
+              isOnline    : result.isOnline,
+              isTyping    : result.isTyping,
+              isRecording : result.isRecording ?? false,
+              typingUsers : result.typingUsers ?? [],
+              lastSeen    : result.lastSeen,
             });
           }
         } catch (err: any) {
@@ -1490,32 +1422,24 @@ export class WhatsAppSession {
             err.message?.includes('Execution context') ||
             err.message?.includes('Target closed')
           ) {
-            this.logger.warn(
-              `[PRESENCE] Poll stopped — context destroyed for chatId=${chatId}`,
-            );
+            this.logger.warn(`[PRESENCE] Poll stopped — context destroyed for chatId=${chatId}`);
             active = false;
             break;
           }
-          this.logger.error(
-            `[PRESENCE] Poll error for chatId=${chatId}: ${err.message}`,
-          );
+          this.logger.error(`[PRESENCE] Poll error for chatId=${chatId}: ${err.message}`);
         }
 
         await new Promise((r) => setTimeout(r, 1500));
       }
 
-      this.logger.log(
-        `[PRESENCE] Poll loop ended for chatId=${chatId} active=${active}`,
-      );
+      this.logger.log(`[PRESENCE] Poll loop ended for chatId=${chatId} active=${active}`);
     };
 
     poll(); // fire and forget
     this.logger.log(`[PRESENCE] Watcher started for chatId=${chatId}`);
 
     return () => {
-      this.logger.log(
-        `[PRESENCE] Watcher stopped for chatId=${chatId} after ${pollCount} polls`,
-      );
+      this.logger.log(`[PRESENCE] Watcher stopped for chatId=${chatId} after ${pollCount} polls`);
       active = false;
     };
   }

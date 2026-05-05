@@ -6,6 +6,7 @@ import {
   UpdateDateColumn,
   ManyToOne,
   JoinColumn,
+  OneToMany,
 } from 'typeorm';
 import { Role } from '../../roles/entities/role.entity';
 
@@ -53,6 +54,17 @@ export class User {
 
   @Column({ type: 'int', nullable: true, default: null })
   activePlanId: number | null;
+
+  // Self-referencing: which user (admin/user) created this agent
+  @Column({ type: 'int', nullable: true, default: null, name: 'created_by' })
+  createdBy: number | null;
+
+  @ManyToOne(() => User, (user) => user.agents, { nullable: true })
+  @JoinColumn({ name: 'created_by' })
+  creator: User | null;
+
+  @OneToMany(() => User, (user) => user.creator)
+  agents: User[];
 
   @CreateDateColumn()
   createdAt: Date;

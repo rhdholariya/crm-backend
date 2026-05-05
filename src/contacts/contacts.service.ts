@@ -4,7 +4,7 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, In } from 'typeorm';
+import { Repository, In, Or, ILike } from 'typeorm';
 import { Contact } from './entities/contact.entity';
 import { Tag } from '../tags/entities/tag.entity';
 import { CreateContactDto } from './dto/create-contact.dto';
@@ -38,6 +38,46 @@ export class ContactsService {
       tags,
     });
     return this.contactRepo.save(contact);
+  }
+
+  /**
+   * Check if a contact already exists for this user by email or phone number.
+   * Returns the existing contact if found, otherwise null.
+   */
+  async findByEmailOrPhone(
+    userId: number,
+    email?: string,
+    phoneNumber?: string,
+  ): Promise<Contact | null> {
+    if (!email && !phoneNumber) return null;
+
+    const conditions: any[] = [];
+    if (email) conditions.push({ userId, email });
+    if (phoneNumber) conditions.push({ userId, phoneNumber });
+
+    return this.contactRepo.findOne({ where: conditions });
+  }
+
+  /**
+   * Create a contact only if no existing contact matches the email or phone.
+   * Returns the existing contact if a duplicate is found, or the newly created one.
+   */
+  async createIfNotExists(
+    userId: number,
+    dto: CreateContactDto,
+  ): Promise<{ contact: Contact; created: boolean }> {
+    const existing = await this.findByEmailOrPhone(
+      userId,
+      dto.email,
+      dto.phoneNumber,
+    );
+
+    if (existing) {
+      return { contact: existing, created: false };
+    }
+
+    const contact = await this.create(userId, dto);
+    return { contact, created: true };
   }
 
   async findAll(

@@ -27,6 +27,14 @@ export async function seed(dataSource: DataSource) {
     console.log('✓ User role created');
   }
 
+  // Create Agent role
+  let agentRole = await roleRepo.findOneBy({ name: 'Agent' });
+  if (!agentRole) {
+    agentRole = roleRepo.create({ name: 'Agent' });
+    await roleRepo.save(agentRole);
+    console.log('✓ Agent role created');
+  }
+
   // Create admin user
   const adminExists = await userRepo.findOneBy({ email: 'admin@example.com' });
   if (!adminExists) {

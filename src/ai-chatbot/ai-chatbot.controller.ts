@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Patch,
+  Put,
   Delete,
   Param,
   Body,
@@ -14,6 +15,7 @@ import {
 import { AiChatbotService } from './ai-chatbot.service';
 import { UpdateAiSettingsDto } from './dto/update-ai-settings.dto';
 import { ChatRequestDto, SuggestReplyDto } from './dto/chat-request.dto';
+import { TestConnectionDto } from './dto/test-connection.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { AuthUser } from '../auth/entities/auth-user.entity';
@@ -24,29 +26,80 @@ import { successResponse } from '../common/utils/response.util';
 export class AiChatbotController {
   constructor(private readonly aiChatbotService: AiChatbotService) {}
 
-  // ── Settings ──────────────────────────────────────────────────────────────
+  // ── Chatbot Management ────────────────────────────────────────────────────
 
-  // GET /api/ai-chatbot/settings
-  @Get('settings')
-  async getSettings(@CurrentUser() user: AuthUser) {
-    const result = await this.aiChatbotService.getSettings(user.id);
-    return successResponse('AI settings fetched successfully', result);
+  // GET /api/ai-chatbot/chatbots - Get all chatbots
+  @Get('chatbots')
+  async getAllChatbots(@CurrentUser() user: AuthUser) {
+    const result = await this.aiChatbotService.getAllChatbots(user.id);
+    return successResponse('All chatbots fetched successfully', result);
   }
 
-  // PATCH /api/ai-chatbot/settings
-  @Patch('settings')
-  async updateSettings(
+  // GET /api/ai-chatbot/chatbots/:id - Get single chatbot
+  @Get('chatbots/:id')
+  async getChatbot(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseIntPipe) chatbotId: number,
+  ) {
+    const result = await this.aiChatbotService.getChatbot(user.id, chatbotId);
+    return successResponse('Chatbot fetched successfully', result);
+  }
+
+  // POST /api/ai-chatbot/chatbots - Create new chatbot
+  @Post('chatbots')
+  async createChatbot(
     @CurrentUser() user: AuthUser,
     @Body() dto: UpdateAiSettingsDto,
   ) {
-    const result = await this.aiChatbotService.updateSettings(user.id, dto);
-    return successResponse('AI settings updated successfully', result);
+    const result = await this.aiChatbotService.createChatbot(user.id, dto);
+    return successResponse('Chatbot created successfully', result);
   }
 
-  // POST /api/ai-chatbot/settings/test
+  // GET /api/ai-chatbot/settings - Get active chatbot settings
+  @Get('settings')
+  async getSettings(@CurrentUser() user: AuthUser) {
+    const result = await this.aiChatbotService.getSettings(user.id);
+    return successResponse('Active chatbot settings fetched successfully', result);
+  }
+
+  // PATCH /api/ai-chatbot/chatbots/:id - Update chatbot
+  @Patch('chatbots/:id')
+  async updateSettings(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseIntPipe) chatbotId: number,
+    @Body() dto: UpdateAiSettingsDto,
+  ) {
+    const result = await this.aiChatbotService.updateSettings(user.id, chatbotId, dto);
+    return successResponse('Chatbot updated successfully', result);
+  }
+
+  // PUT /api/ai-chatbot/chatbots/:id/activate - Set as active chatbot
+  @Put('chatbots/:id/activate')
+  async setActiveChatbot(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseIntPipe) chatbotId: number,
+  ) {
+    const result = await this.aiChatbotService.setActiveChatbot(user.id, chatbotId);
+    return successResponse('Chatbot activated successfully', result);
+  }
+
+  // DELETE /api/ai-chatbot/chatbots/:id - Delete chatbot
+  @Delete('chatbots/:id')
+  async deleteChatbot(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseIntPipe) chatbotId: number,
+  ) {
+    await this.aiChatbotService.deleteChatbot(user.id, chatbotId);
+    return successResponse('Chatbot deleted successfully');
+  }
+
+  // POST /api/ai-chatbot/settings/test - Test connection
   @Post('settings/test')
-  async testConnection(@CurrentUser() user: AuthUser) {
-    const result = await this.aiChatbotService.testConnection(user.id);
+  async testConnection(
+    @CurrentUser() user: AuthUser,
+    @Body() dto: TestConnectionDto,
+  ) {
+    const result = await this.aiChatbotService.testConnection(user.id, dto);
     return successResponse('Connection successful', result);
   }
 

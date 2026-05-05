@@ -39,7 +39,9 @@ export class AuthService {
     const valid = await bcrypt.compare(password, user.password);
     if (!valid) return null;
 
-    return { id: user.id, email: user.email, roleId: user.roleId };
+    const role = await this.rolesService.findOne(user.roleId);
+
+    return { id: user.id, email: user.email, roleId: user.roleId, role: role?.name };
   }
 
   login(user: AuthUser) {
@@ -140,6 +142,7 @@ export class AuthService {
     });
 
     const payload = { sub: user.id, email: user.email, roleId: user.roleId };
+    const role = await this.rolesService.findOne(user.roleId);
 
     return {
       message: 'OTP verified successfully',
@@ -149,6 +152,7 @@ export class AuthService {
         id: user.id,
         email: user.email,
         roleId: user.roleId,
+        role: role?.name,
         otpVerifiedAt: now,
       },
     };

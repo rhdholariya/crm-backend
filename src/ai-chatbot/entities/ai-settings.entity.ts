@@ -30,6 +30,9 @@ export class AiSettings {
   @Column()
   userId: number;
 
+  @Column({ nullable: true })
+  name: string; // Chatbot name (e.g., "Support Bot", "Sales Bot")
+
   @Column({ type: 'varchar', default: AiModel.DEEPSEEK_CHAT })
   model: string;
 
@@ -47,6 +50,9 @@ export class AiSettings {
 
   @Column({ type: 'text', nullable: true })
   systemPrompt: string;
+
+  @Column({ default: false })
+  isActive: boolean; // Only one chatbot per user should be active
 
   @CreateDateColumn()
   createdAt: Date;

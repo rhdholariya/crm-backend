@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { AiSettings, AiProvider } from './entities/ai-settings.entity';
@@ -6,6 +6,7 @@ import { AiConversation } from './entities/ai-conversation.entity';
 import { AiMessage, MessageRole } from './entities/ai-message.entity';
 import { UpdateAiSettingsDto } from './dto/update-ai-settings.dto';
 import { ChatRequestDto, SuggestReplyDto } from './dto/chat-request.dto';
+import { TestConnectionDto } from './dto/test-connection.dto';
 import { AiProviderService, ChatMessage } from './ai-provider.service';
 
 const DEFAULT_SYSTEM_PROMPT =
@@ -30,38 +31,145 @@ export class AiChatbotService {
   // ── Settings ──────────────────────────────────────────────────────────────
 
   async getSettings(userId: number): Promise<AiSettings> {
-    let settings = await this.settingsRepo.findOne({ where: { userId } });
+    // Get active chatbot
+    let settings = await this.settingsRepo.findOne({
+      where: { userId, isActive: true },
+    });
+    
+    // If no active chatbot, get the first one or create default
+    if (!settings) {
+      settings = await this.settingsRepo.findOne({
+        where: { userId },
+        order: { createdAt: 'ASC' },
+      });
+    }
+    
     if (!settings) {
       settings = await this.settingsRepo.save(
-        this.settingsRepo.create({ userId }),
+        this.settingsRepo.create({ userId, isActive: true }),
       );
     }
     return settings;
+  }
+
+  async getAllChatbots(userId: number): Promise<AiSettings[]> {
+    const chatbots = await this.settingsRepo.find({
+      where: { userId },
+      order: { createdAt: 'DESC' },
+    });
+    // Sort with active first
+    return chatbots.sort((a, b) => {
+      if (a.isActive === b.isActive) return 0;
+      return a.isActive ? -1 : 1;
+    });
+  }
+
+  async getChatbot(userId: number, chatbotId: number): Promise<AiSettings> {
+    const chatbot = await this.settingsRepo.findOne({
+      where: { id: chatbotId, userId },
+    });
+    if (!chatbot) {
+      throw new NotFoundException(`Chatbot #${chatbotId} not found`);
+    }
+    return chatbot;
+  }
+
+  async createChatbot(
+    userId: number,
+    dto: UpdateAiSettingsDto,
+  ): Promise<AiSettings> {
+    // If this is the first chatbot, make it active
+    const existingCount = await this.settingsRepo.count({ where: { userId } });
+    const isActive = existingCount === 0;
+
+    const chatbot = await this.settingsRepo.save(
+      this.settingsRepo.create({ userId, ...dto, isActive }),
+    );
+    return chatbot;
   }
 
   async updateSettings(
     userId: number,
+    chatbotId: number,
     dto: UpdateAiSettingsDto,
   ): Promise<AiSettings> {
-    let settings = await this.settingsRepo.findOne({ where: { userId } });
+    const settings = await this.settingsRepo.findOne({
+      where: { id: chatbotId, userId },
+    });
     if (!settings) {
-      settings = await this.settingsRepo.save(
-        this.settingsRepo.create({ userId, ...dto }),
-      );
-    } else {
-      await this.settingsRepo.update(settings.id, dto);
-      settings = (await this.settingsRepo.findOne({
-        where: { userId },
-      })) as AiSettings;
+      throw new NotFoundException(`Chatbot #${chatbotId} not found`);
     }
-    return settings;
+
+    await this.settingsRepo.update(chatbotId, dto);
+    return (await this.settingsRepo.findOne({
+      where: { id: chatbotId },
+    })) as AiSettings;
+  }
+
+  async setActiveChatbot(
+    userId: number,
+    chatbotId: number,
+  ): Promise<AiSettings> {
+    // Verify chatbot exists and belongs to user
+    const chatbot = await this.settingsRepo.findOne({
+      where: { id: chatbotId, userId },
+    });
+    if (!chatbot) {
+      throw new NotFoundException(`Chatbot #${chatbotId} not found`);
+    }
+
+    // Deactivate all other chatbots
+    await this.settingsRepo.update(
+      { userId, isActive: true },
+      { isActive: false },
+    );
+
+    // Activate this one
+    await this.settingsRepo.update(chatbotId, { isActive: true });
+
+    return (await this.settingsRepo.findOne({
+      where: { id: chatbotId },
+    })) as AiSettings;
+  }
+
+  async deleteChatbot(userId: number, chatbotId: number): Promise<void> {
+    const chatbot = await this.settingsRepo.findOne({
+      where: { id: chatbotId, userId },
+    });
+    if (!chatbot) {
+      throw new NotFoundException(`Chatbot #${chatbotId} not found`);
+    }
+
+    await this.settingsRepo.remove(chatbot);
+
+    // If this was the active one, activate another
+    if (chatbot.isActive) {
+      const nextChatbot = await this.settingsRepo.findOne({
+        where: { userId },
+        order: { createdAt: 'ASC' },
+      });
+      if (nextChatbot) {
+        await this.settingsRepo.update(nextChatbot.id, { isActive: true });
+      }
+    }
   }
 
   async testConnection(
     userId: number,
+    dto: TestConnectionDto,
   ): Promise<{ connected: boolean; model: string }> {
-    const settings = await this.getRawSettings(userId);
+    const settings = await this.getSettings(userId);
+
+    // Override saved settings with DTO values
+    settings.apiKey = dto.apiKey;
+    settings.model = dto.model;
+    if (dto.name) settings.name = dto.name;
+    if (dto.provider) settings.provider = dto.provider;
+    if (dto.systemPrompt !== undefined) settings.systemPrompt = dto.systemPrompt;
+
+    // Sync provider from model if provider not explicitly provided
     this.syncProviderFromModel(settings);
+
     await this.aiProvider.chat(settings, [
       { role: 'user', content: 'Say "connected" in one word.' },
     ]);

@@ -3,6 +3,10 @@ import { AiModel, AiProvider } from '../entities/ai-settings.entity';
 
 export class UpdateAiSettingsDto {
   @IsOptional()
+  @IsString()
+  name?: string;
+
+  @IsOptional()
   @IsEnum(AiModel)
   model?: AiModel;
 

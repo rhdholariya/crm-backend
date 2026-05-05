@@ -24,6 +24,8 @@ import { LanguageModule } from './language/language.module';
 import { QuickReplyModule } from './quick-reply/quick-reply.module';
 import { TranslationsModule } from './translations/translations.module';
 import { AiChatbotModule } from './ai-chatbot/ai-chatbot.module';
+import { LeadManagementModule } from './lead-management/lead-management.module';
+import { AgentsModule } from './agents/agents.module';
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -60,6 +62,8 @@ import { AiChatbotModule } from './ai-chatbot/ai-chatbot.module';
     QuickReplyModule,
     TranslationsModule,
     AiChatbotModule,
+    LeadManagementModule,
+    AgentsModule,
   ],
   controllers: [AppController],
   providers: [AppService],
