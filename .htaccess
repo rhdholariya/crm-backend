@@ -1,6 +1,12 @@
 DirectoryIndex disabled
 
-# Redirect traffic to your port 3000
 RewriteEngine On
 RewriteBase /
+
+# WebSocket handling (requires mod_proxy_wstunnel)
+RewriteCond %{HTTP:Upgrade} websocket [NC]
+RewriteCond %{HTTP:Connection} upgrade [NC]
+RewriteRule ^/?(.*) ws://127.0.0.1:3000/$1 [P,L]
+
+# Normal HTTP requests (your original working rule)
 RewriteRule ^(.*)?$ http://127.0.0.1:3000/$1 [P,L]
