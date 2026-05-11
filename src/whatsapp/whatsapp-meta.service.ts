@@ -47,7 +47,10 @@ export class WhatsAppMetaService {
 
   // ── Config ──────────────────────────────────────────────────────────────────
 
-  async upsertConfig(userId: number, dto: UpsertConfigDto): Promise<WhatsAppConfig> {
+  async upsertConfig(
+    userId: number,
+    dto: UpsertConfigDto,
+  ): Promise<WhatsAppConfig> {
     let config = await this.configRepo.findOne({ where: { userId } });
     if (!config) {
       config = this.configRepo.create({ userId });
@@ -109,9 +112,9 @@ export class WhatsAppMetaService {
     dto: CreateMetaTemplateDto,
   ): Promise<WhatsAppTemplate> {
     const config = await this.requireConfig(userId);
-    
+
     // Extract body text and parameters from components
-    const bodyComponent = dto.components.find(c => c.type === 'BODY');
+    const bodyComponent = dto.components.find((c) => c.type === 'BODY');
     const bodyText = bodyComponent?.text || '';
     const params = this.extractParams(bodyText);
 
@@ -191,7 +194,7 @@ export class WhatsAppMetaService {
 
     if (dto.components) {
       template.components = dto.components as any;
-      const bodyComponent = dto.components.find(c => c.type === 'BODY');
+      const bodyComponent = dto.components.find((c) => c.type === 'BODY');
       if (bodyComponent?.text) {
         template.body = bodyComponent.text;
         template.parameters = this.extractParams(bodyComponent.text);
@@ -205,7 +208,9 @@ export class WhatsAppMetaService {
     const template = await this.getTemplate(userId, id);
 
     if (template.type !== TemplateType.META) {
-      throw new BadRequestException('Only Meta templates can be deleted via this endpoint');
+      throw new BadRequestException(
+        'Only Meta templates can be deleted via this endpoint',
+      );
     }
 
     // If it's approved/pending, delete from Meta too
@@ -225,7 +230,9 @@ export class WhatsAppMetaService {
             headers: { Authorization: `Bearer ${config.accessToken}` },
           },
         );
-        this.logger.log(`[META] Deleted template from Meta: ${template.metaTemplateId}`);
+        this.logger.log(
+          `[META] Deleted template from Meta: ${template.metaTemplateId}`,
+        );
       } catch (err: any) {
         this.logger.warn(
           `[META] Could not delete template from Meta: ${err.message}`,
@@ -286,7 +293,9 @@ export class WhatsAppMetaService {
     limit: number;
     totalPages: number;
   }> {
-    const qb = this.templateRepo.createQueryBuilder('t').where('t.userId = :userId', { userId });
+    const qb = this.templateRepo
+      .createQueryBuilder('t')
+      .where('t.userId = :userId', { userId });
 
     if (type) {
       qb.andWhere('t.type = :type', { type });
@@ -383,7 +392,13 @@ export class WhatsAppMetaService {
 
     const result = await this.callSendApi(config, payload);
 
-    await this.saveMessage(userId, to, message, 'text', result?.messages?.[0]?.id);
+    await this.saveMessage(
+      userId,
+      to,
+      message,
+      'text',
+      result?.messages?.[0]?.id,
+    );
     return result;
   }
 
@@ -397,7 +412,9 @@ export class WhatsAppMetaService {
     const template = await this.getTemplate(userId, templateId);
 
     if (template.type !== TemplateType.META) {
-      throw new BadRequestException('Only Meta templates can be sent via this endpoint');
+      throw new BadRequestException(
+        'Only Meta templates can be sent via this endpoint',
+      );
     }
 
     if (template.status !== TemplateStatus.APPROVED) {
@@ -409,7 +426,7 @@ export class WhatsAppMetaService {
     // Convert dynamic parameters to key-value map
     const paramsMap: Record<string, string> = {};
     if (dynamicParameters && dynamicParameters.length > 0) {
-      dynamicParameters.forEach(param => {
+      dynamicParameters.forEach((param) => {
         paramsMap[param.field] = param.value;
       });
     }
@@ -459,7 +476,10 @@ export class WhatsAppMetaService {
     return result;
   }
 
-  private async callSendApi(config: WhatsAppConfig, payload: any): Promise<any> {
+  private async callSendApi(
+    config: WhatsAppConfig,
+    payload: any,
+  ): Promise<any> {
     this.logger.log(`[META] Sending message to ${payload.to}`);
 
     const response = await fetch(

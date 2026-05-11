@@ -3,6 +3,7 @@ import {
   IsBoolean,
   IsOptional,
   IsPhoneNumber,
+  IsEmail,
 } from 'class-validator';
 
 export class UpdateAgentDto {
@@ -17,6 +18,10 @@ export class UpdateAgentDto {
   @IsOptional()
   @IsPhoneNumber()
   phoneNumber?: string;
+
+  @IsOptional()
+  @IsEmail()
+  email?: string;
 
   @IsOptional()
   @IsBoolean()

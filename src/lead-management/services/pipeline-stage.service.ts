@@ -56,10 +56,15 @@ export class PipelineStageService {
       throw new NotFoundException('Pipeline not found');
     }
 
-    return this.stageRepository.find({
-      where: { pipelineId, isActive: true },
-      order: { position: 'ASC' },
-    });
+    return this.stageRepository
+      .createQueryBuilder('stage')
+      .leftJoinAndSelect('stage.leads', 'lead', 'lead.isArchived = false')
+      .leftJoinAndSelect('lead.tags', 'tags')
+      .where('stage.pipelineId = :pipelineId', { pipelineId })
+      .andWhere('stage.isActive = true')
+      .orderBy('stage.position', 'ASC')
+      .addOrderBy('lead.createdAt', 'DESC')
+      .getMany();
   }
 
   async findById(
@@ -147,10 +152,15 @@ export class PipelineStageService {
     pipelineId: number,
     stageId: number,
   ) {
-    const stage = await this.findById(userId, pipelineId, stageId);
-    return this.stageRepository.findOne({
-      where: { id: stageId, pipelineId },
-      relations: ['leads'],
-    });
+    await this.findById(userId, pipelineId, stageId); // verify ownership
+
+    return this.stageRepository
+      .createQueryBuilder('stage')
+      .leftJoinAndSelect('stage.leads', 'lead', 'lead.isArchived = false')
+      .leftJoinAndSelect('lead.tags', 'tags')
+      .where('stage.id = :stageId', { stageId })
+      .andWhere('stage.pipelineId = :pipelineId', { pipelineId })
+      .orderBy('lead.createdAt', 'DESC')
+      .getOne();
   }
 }

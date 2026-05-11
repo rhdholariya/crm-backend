@@ -30,7 +30,11 @@ import {
   SendMetaTemplateDto,
   ListMetaTemplatesQueryDto,
 } from './dto/meta-template.dto';
-import { TemplateType, TemplateStatus, TemplateCategory } from './entities/whatsapp-template.entity';
+import {
+  TemplateType,
+  TemplateStatus,
+  TemplateCategory,
+} from './entities/whatsapp-template.entity';
 
 @Controller('whatsapp/meta')
 export class WhatsAppMetaController {
@@ -103,7 +107,9 @@ export class WhatsAppMetaController {
     @CurrentUser() user: AuthUser,
     @Body() dto: CreateMetaTemplateDto,
   ) {
-    this.logger.log(`[API] POST /meta/templates/meta → userId=${user.id} name=${dto.name}`);
+    this.logger.log(
+      `[API] POST /meta/templates/meta → userId=${user.id} name=${dto.name}`,
+    );
     const template = await this.metaService.createMetaTemplate(user.id, dto);
     return successResponse('Meta template submitted for approval', template);
   }
@@ -116,7 +122,11 @@ export class WhatsAppMetaController {
     @Body() dto: UpdateMetaTemplateDto,
   ) {
     this.logger.log(`[API] PUT /meta/templates/${id} → userId=${user.id}`);
-    const template = await this.metaService.updateMetaTemplate(user.id, id, dto);
+    const template = await this.metaService.updateMetaTemplate(
+      user.id,
+      id,
+      dto,
+    );
     return successResponse('Meta template updated', template);
   }
 
@@ -137,7 +147,9 @@ export class WhatsAppMetaController {
     @CurrentUser() user: AuthUser,
     @Param('id', ParseIntPipe) id: number,
   ) {
-    this.logger.log(`[API] POST /meta/templates/${id}/sync-status → userId=${user.id}`);
+    this.logger.log(
+      `[API] POST /meta/templates/${id}/sync-status → userId=${user.id}`,
+    );
     const template = await this.metaService.syncMetaTemplateStatus(user.id, id);
     return successResponse('Template status synced', template);
   }
@@ -223,10 +235,7 @@ export class WhatsAppMetaController {
 
   @Post('webhook')
   @HttpCode(HttpStatus.OK)
-  async receiveWebhook(
-    @Query('userId') userId: string,
-    @Body() body: any,
-  ) {
+  async receiveWebhook(@Query('userId') userId: string, @Body() body: any) {
     // userId passed as query param so we know which account to attribute messages to
     if (userId) {
       await this.metaService.handleWebhook(Number(userId), body);

@@ -43,8 +43,8 @@ export class AgentsService {
       password: hashed,
       roleId: agentRole.id,
       createdBy: createdByUserId,
-      isActive: true,
-      otpVerifiedAt: new Date(), // agents are pre-verified by their creator
+      isActive: dto.isActive,
+      otpVerifiedAt: new Date(),
     });
 
     const saved = await this.userRepo.save(agent);
@@ -55,7 +55,13 @@ export class AgentsService {
     createdByUserId: number,
     page = 1,
     limit = 10,
-  ): Promise<{ total: number; page: number; limit: number; totalPages: number; data: User[] }> {
+  ): Promise<{
+    total: number;
+    page: number;
+    limit: number;
+    totalPages: number;
+    data: User[];
+  }> {
     const agentRole = await this.rolesService.findByName('Agent');
     if (!agentRole) return { total: 0, page, limit, totalPages: 0, data: [] };
 
@@ -104,8 +110,14 @@ export class AgentsService {
   ): Promise<User> {
     const agent = await this.findOne(createdByUserId, agentId);
 
-    Object.assign(agent, dto);
+    if (dto.email && dto.email !== agent.email) {
+      const existing = await this.userRepo.findOneBy({ email: dto.email });
+      if (existing) {
+        throw new BadRequestException('Email already in use');
+      }
+    }
 
+    Object.assign(agent, dto);
     return this.userRepo.save(agent);
   }
 

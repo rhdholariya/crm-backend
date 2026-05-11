@@ -1,5 +1,19 @@
-import { IsString, IsEmail, IsOptional, IsEnum, IsNumber } from 'class-validator';
+import {
+  IsString,
+  IsEmail,
+  IsOptional,
+  IsEnum,
+  IsNumber,
+  IsArray,
+  ValidateNested,
+} from 'class-validator';
+import { Type } from 'class-transformer';
 import { LeadSource, CustomerType } from '../entities/lead.entity';
+
+export class LeadNoteDto {
+  @IsString()
+  text: string;
+}
 
 export class CreateLeadDto {
   @IsString()
@@ -30,8 +44,10 @@ export class CreateLeadDto {
   totalOrderValue?: number;
 
   @IsOptional()
-  @IsString()
-  notes?: string;
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => LeadNoteDto)
+  notesList?: LeadNoteDto[];
 
   @IsNumber()
   stageId: number;

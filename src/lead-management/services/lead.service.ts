@@ -1,10 +1,15 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Lead, CustomerType } from '../entities/lead.entity';
 import { LeadActivity, ActivityType } from '../entities/lead-activity.entity';
 import { CreateLeadDto } from '../dto/create-lead.dto';
 import { UpdateLeadDto } from '../dto/update-lead.dto';
+import { randomUUID } from 'crypto';
 
 @Injectable()
 export class LeadService {
@@ -16,9 +21,16 @@ export class LeadService {
   ) {}
 
   async create(userId: number, createLeadDto: CreateLeadDto): Promise<Lead> {
+    const notesList = (createLeadDto.notesList || []).map((n) => ({
+      id: randomUUID(),
+      text: n.text,
+      createdAt: new Date().toISOString(),
+    }));
+
     const lead = this.leadRepository.create({
       ...createLeadDto,
       userId,
+      notesList,
     });
     return this.leadRepository.save(lead);
   }
@@ -28,8 +40,15 @@ export class LeadService {
       .createQueryBuilder('lead')
       .where('lead.userId = :userId', { userId })
       .leftJoinAndSelect('lead.stage', 'stage')
+      .leftJoinAndSelect('stage.pipeline', 'pipeline')
       .leftJoinAndSelect('lead.tags', 'tags')
       .leftJoinAndSelect('lead.activities', 'activities');
+
+    if (filters?.pipelineId) {
+      query.andWhere('stage.pipelineId = :pipelineId', {
+        pipelineId: filters.pipelineId,
+      });
+    }
 
     if (filters?.stageId) {
       query.andWhere('lead.stageId = :stageId', { stageId: filters.stageId });
@@ -79,7 +98,10 @@ export class LeadService {
 
     Object.assign(lead, updateLeadDto);
 
-    return this.leadRepository.save(lead);
+    await this.leadRepository.save(lead);
+
+    // Reload fresh so all relations (stage, tags) reflect latest data
+    return this.findById(userId, leadId);
   }
 
   async updateStage(
@@ -90,16 +112,22 @@ export class LeadService {
     const lead = await this.findById(userId, leadId);
     const oldStageId = lead.stageId;
 
-    lead.stageId = stageId;
-    const updatedLead = await this.leadRepository.save(lead);
+    // Use direct update query to ensure FK is persisted correctly
+    await this.leadRepository.update({ id: leadId }, { stageId });
 
     // Log activity
-    await this.addActivity(leadId, ActivityType.STAGE_CHANGED, 'Stage changed', {
-      oldStageId,
-      newStageId: stageId,
-    });
+    await this.addActivity(
+      leadId,
+      ActivityType.STAGE_CHANGED,
+      'Stage changed',
+      {
+        oldStageId,
+        newStageId: stageId,
+      },
+    );
 
-    return updatedLead;
+    // Reload fresh from DB so the stage relation reflects the new stage
+    return this.findById(userId, leadId);
   }
 
   async updateCustomerType(
@@ -159,6 +187,61 @@ export class LeadService {
   async delete(userId: number, leadId: number): Promise<void> {
     const lead = await this.findById(userId, leadId);
     await this.leadRepository.remove(lead);
+  }
+
+  // ── Notes ─────────────────────────────────────────────────────────────────
+
+  // Add one or multiple notes
+  async addNotes(
+    userId: number,
+    leadId: number,
+    texts: string[],
+  ): Promise<Lead> {
+    const lead = await this.findById(userId, leadId);
+    const notes = lead.notesList || [];
+    const now = new Date().toISOString();
+    texts.forEach((text) => {
+      notes.push({ id: randomUUID(), text, createdAt: now });
+    });
+    lead.notesList = notes;
+    await this.leadRepository.update({ id: leadId }, { notesList: notes });
+    return this.findById(userId, leadId);
+  }
+
+  // Update one or multiple notes by id
+  async updateNotes(
+    userId: number,
+    leadId: number,
+    updates: { id: string; text: string }[],
+  ): Promise<Lead> {
+    const lead = await this.findById(userId, leadId);
+    const notes = lead.notesList || [];
+    for (const update of updates) {
+      const note = notes.find((n) => n.id === update.id);
+      if (!note) throw new NotFoundException(`Note ${update.id} not found`);
+      note.text = update.text;
+    }
+    lead.notesList = notes;
+    await this.leadRepository.update({ id: leadId }, { notesList: notes });
+    return this.findById(userId, leadId);
+  }
+
+  // Delete one or multiple notes by id
+  async deleteNotes(
+    userId: number,
+    leadId: number,
+    noteIds: string[],
+  ): Promise<Lead> {
+    const lead = await this.findById(userId, leadId);
+    const notes = lead.notesList || [];
+    for (const noteId of noteIds) {
+      const index = notes.findIndex((n) => n.id === noteId);
+      if (index === -1) throw new NotFoundException(`Note ${noteId} not found`);
+      notes.splice(index, 1);
+    }
+    lead.notesList = notes;
+    await this.leadRepository.update({ id: leadId }, { notesList: notes });
+    return this.findById(userId, leadId);
   }
 
   async getLeadsByStage(userId: number, stageId: number): Promise<Lead[]> {

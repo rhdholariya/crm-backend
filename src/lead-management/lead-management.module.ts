@@ -14,8 +14,7 @@ import { PipelineStageService } from './services/pipeline-stage.service';
 import { EcommerceIntegrationService } from './services/ecommerce-integration.service';
 import { FieldMappingService } from './services/field-mapping.service';
 import { AutomationWorkflowService } from './services/automation-workflow.service';
-import { ShopifyWebhookService } from './services/shopify-webhook.service';
-import { WooCommerceWebhookService } from './services/woocommerce-webhook.service';
+import { ShopifyWebhookService } from './services/shopify-webhook.service';import { WooCommerceWebhookService } from './services/woocommerce-webhook.service';
 import { AutomationExecutorService } from './services/automation-executor.service';
 import { WorkflowTriggerMatcherService } from './services/workflow-trigger-matcher.service';
 
@@ -24,7 +23,6 @@ import { PipelineController } from './controllers/pipeline.controller';
 import { PipelineStageController } from './controllers/pipeline-stage.controller';
 import { EcommerceIntegrationController } from './controllers/ecommerce-integration.controller';
 import { FieldMappingController } from './controllers/field-mapping.controller';
-import { AutomationWorkflowController } from './controllers/automation-workflow.controller';
 import { WebhookController } from './controllers/webhook.controller';
 
 // Import external modules
@@ -67,7 +65,6 @@ import { CommonModule } from '../common/common.module';
     PipelineStageController,
     EcommerceIntegrationController,
     FieldMappingController,
-    AutomationWorkflowController,
     WebhookController,
   ],
   exports: [

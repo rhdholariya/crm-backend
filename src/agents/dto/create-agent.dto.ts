@@ -3,7 +3,7 @@ import {
   IsString,
   MinLength,
   IsOptional,
-  IsPhoneNumber,
+  IsPhoneNumber, IsBoolean,
 } from 'class-validator';
 
 export class CreateAgentDto {
@@ -23,4 +23,8 @@ export class CreateAgentDto {
   @IsString()
   @MinLength(8)
   password: string;
+
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean = true;
 }

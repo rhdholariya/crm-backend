@@ -1,4 +1,4 @@
-import { IsString, IsEnum, IsOptional, IsArray } from 'class-validator';
+import { IsString, IsEnum, IsOptional, IsArray, IsUrl } from 'class-validator';
 import { IntegrationPlatform } from '../entities/ecommerce-integration.entity';
 
 export class CreateEcommerceIntegrationDto {
@@ -9,7 +9,10 @@ export class CreateEcommerceIntegrationDto {
   storeName: string;
 
   @IsOptional()
-  @IsString()
+  @IsUrl(
+    { require_protocol: false },
+    { message: 'storeUrl must be a valid URL (e.g. mystore.myshopify.com or https://mystore.com)' },
+  )
   storeUrl?: string;
 
   @IsString()

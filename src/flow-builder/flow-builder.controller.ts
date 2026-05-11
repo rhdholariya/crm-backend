@@ -14,6 +14,9 @@ import {
   HttpStatus,
 } from '@nestjs/common';
 import { FlowBuilderService } from './flow-builder.service';
+import { AutomationWorkflowService } from '../lead-management/services/automation-workflow.service';
+import { CreateAutomationWorkflowDto } from '../lead-management/dto/create-automation-workflow.dto';
+import { WorkflowStatus } from '../lead-management/entities/automation-workflow.entity';
 import { CreateFlowDto } from './dto/create-flow.dto';
 import { UpdateFlowDto } from './dto/update-flow.dto';
 import { SaveFlowGraphDto } from './dto/save-flow-graph.dto';
@@ -31,10 +34,18 @@ class UpdateStatusDto {
   status: FlowStatus;
 }
 
+class UpdateWorkflowStatusDto {
+  @IsEnum(WorkflowStatus)
+  status: WorkflowStatus;
+}
+
 @UseGuards(JwtAuthGuard)
 @Controller('flows')
 export class FlowBuilderController {
-  constructor(private readonly flowService: FlowBuilderService) {}
+  constructor(
+    private readonly flowService: FlowBuilderService,
+    private readonly automationService: AutomationWorkflowService,
+  ) {}
 
   // ── Flow CRUD ─────────────────────────────────────────────────────────────
 
@@ -208,5 +219,67 @@ export class FlowBuilderController {
   ) {
     const result = await this.flowService.getExecutionDetail(user.id, executionId);
     return successResponse('Execution detail fetched', result);
+  }
+
+  // ── Automation Workflows ──────────────────────────────────────────────────
+
+  // POST /api/flows/automations
+  @Post('automations')
+  async createAutomation(
+    @CurrentUser() user: AuthUser,
+    @Body() dto: CreateAutomationWorkflowDto,
+  ) {
+    const result = await this.automationService.create(user.id, dto);
+    return successResponse('Automation workflow created successfully', result);
+  }
+
+  // GET /api/flows/automations
+  @Get('automations')
+  async findAllAutomations(@CurrentUser() user: AuthUser) {
+    const result = await this.automationService.findAll(user.id);
+    return successResponse('Automation workflows fetched successfully', result);
+  }
+
+  // GET /api/flows/automations/:id
+  @Get('automations/:id')
+  async findOneAutomation(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseIntPipe) id: number,
+  ) {
+    const result = await this.automationService.findById(user.id, id);
+    return successResponse('Automation workflow fetched successfully', result);
+  }
+
+  // PUT /api/flows/automations/:id
+  @Put('automations/:id')
+  async updateAutomation(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: Partial<CreateAutomationWorkflowDto>,
+  ) {
+    const result = await this.automationService.update(user.id, id, dto);
+    return successResponse('Automation workflow updated successfully', result);
+  }
+
+  // PUT /api/flows/automations/:id/status
+  @Put('automations/:id/status')
+  async updateAutomationStatus(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: UpdateWorkflowStatusDto,
+  ) {
+    const result = await this.automationService.updateStatus(user.id, id, dto.status);
+    return successResponse('Automation workflow status updated', result);
+  }
+
+  // DELETE /api/flows/automations/:id
+  @Delete('automations/:id')
+  @HttpCode(HttpStatus.OK)
+  async removeAutomation(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseIntPipe) id: number,
+  ) {
+    await this.automationService.delete(user.id, id);
+    return successResponse('Automation workflow deleted successfully');
   }
 }

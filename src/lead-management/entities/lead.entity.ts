@@ -73,8 +73,8 @@ export class Lead {
   @Column({ nullable: true })
   lastPurchaseDate: Date;
 
-  @Column({ type: 'text', nullable: true })
-  notes: string;
+  @Column({ type: 'json', nullable: true, default: () => "'[]'" })
+  notesList: { id: string; text: string; createdAt: string }[];
 
   @Column({ type: 'json', nullable: true })
   customFields: Record<string, any>; // Store additional data from webhooks
