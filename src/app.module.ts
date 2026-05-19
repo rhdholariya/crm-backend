@@ -26,6 +26,7 @@ import { TranslationsModule } from './translations/translations.module';
 import { AiChatbotModule } from './ai-chatbot/ai-chatbot.module';
 import { LeadManagementModule } from './lead-management/lead-management.module';
 import { AgentsModule } from './agents/agents.module';
+import { CataloguesModule } from './catalogues/catalogues.module';
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -67,6 +68,7 @@ import { AgentsModule } from './agents/agents.module';
     AiChatbotModule,
     LeadManagementModule,
     AgentsModule,
+    CataloguesModule,
   ],
   controllers: [AppController],
   providers: [AppService],

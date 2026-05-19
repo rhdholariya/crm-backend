@@ -87,6 +87,7 @@ export class WhatsAppService implements OnModuleInit {
   async logout(userId: number, profileId: string) {
     const s = findSession(userId, profileId);
     if (s) await s.logout();
+    // Session is removed from registry inside s.logout() — nothing else needed
     return { success: true };
   }
 
@@ -808,7 +809,7 @@ export class WhatsAppService implements OnModuleInit {
 
   private requireConnected(userId: number, profileId: string): WhatsAppSession {
     const s = findSession(userId, profileId);
-    if (!s || !s.isConnected()) throw new Error('WhatsApp not connected');
+    if (!s || !s.isConnected()) throw new BadRequestException('WhatsApp session is not connected. Please scan the QR code to connect.');
     return s;
   }
 

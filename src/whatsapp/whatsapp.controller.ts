@@ -82,7 +82,7 @@ export class WhatsAppController {
   qr(@CurrentUser() user: AuthUser) {
     this.logger.log(`[API] GET /qr → userId=${user.id}`);
     const qr = this.waService.getQR(user.id, PROFILE_ID);
-    if (!qr) throw new NotFoundException('No QR available — call /start first');
+    if (!qr) return successResponse('No QR available — call /start first', { qr: null });
     return successResponse('QR code', { qr });
   }
 

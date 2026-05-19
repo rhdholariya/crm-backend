@@ -1185,17 +1185,37 @@ export class WhatsAppSession {
     this.status = 'disconnected';
     this.connectedNumber = null;
     this.qrDataURL = null;
+    
+    // Delete session files from disk
     const sessionPath = path.join(
       profileDataDir(this.userId, this.profileId),
       'session',
     );
     if (fs.existsSync(sessionPath))
       fs.rmSync(sessionPath, { recursive: true, force: true });
+    
+    // Clear all chat data from memory
     Object.keys(this.chatStore).forEach((k) => delete this.chatStore[k]);
+    
+    // Delete chats.json file
     const chatFile = chatStorePath(this.userId, this.profileId);
     if (fs.existsSync(chatFile)) fs.unlinkSync(chatFile);
+    
+    // Delete all cached avatars
+    const avatarDir = path.join(profileDataDir(this.userId, this.profileId), 'avatars');
+    if (fs.existsSync(avatarDir)) {
+      fs.rmSync(avatarDir, { recursive: true, force: true });
+    }
+    
+    // Broadcast empty state to frontend
     this.broadcast('status', { status: 'disconnected' });
     this.broadcast('chats', []);
+    
+    // Remove this session from the global registry so it can't be accessed anymore
+    const key = sessionKey(this.userId, this.profileId);
+    sessions.delete(key);
+    
+    this.logger.log(`[LOGOUT] Session completely destroyed and removed from registry for userId=${this.userId}`);
   }
 
   isConnected(): boolean {
