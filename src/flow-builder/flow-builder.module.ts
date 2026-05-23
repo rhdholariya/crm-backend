@@ -14,6 +14,8 @@ import { FlowValidatorService } from './flow-validator.service';
 import { FlowTemplateService } from './flow-template.service';
 import { FlowExecutorService } from './flow-executor.service';
 import { AutomationWorkflowService } from '../lead-management/services/automation-workflow.service';
+import { AiChatbotModule } from '../ai-chatbot/ai-chatbot.module';
+import { ContactsModule } from '../contacts/contacts.module';
 
 @Module({
   imports: [
@@ -27,6 +29,8 @@ import { AutomationWorkflowService } from '../lead-management/services/automatio
       FlowRateLimit,
       AutomationWorkflow,
     ]),
+    AiChatbotModule,
+    ContactsModule,
   ],
   controllers: [FlowBuilderController],
   providers: [

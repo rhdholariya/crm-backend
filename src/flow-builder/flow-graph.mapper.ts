@@ -66,6 +66,11 @@ const FE_TYPE_TO_NODE_TYPE: Record<string, NodeType> = {
   collect_input: NodeType.COLLECT_INPUT,
   userInput: NodeType.COLLECT_INPUT,
 
+  // AI nodes
+  aiChatbot: NodeType.AI_CHATBOT,
+  ai_chatbot: NodeType.AI_CHATBOT,
+  aiChatbotNode: NodeType.AI_CHATBOT,
+
   // Terminal nodes
   end: NodeType.END,
   endNode: NodeType.END,
@@ -98,6 +103,7 @@ const NODE_TYPE_TO_FE_TYPE: Record<NodeType, string> = {
   [NodeType.JUMP_TO_FLOW]: 'jumpToFlow',
   [NodeType.WAIT_FOR_INPUT]: 'waitForInput',
   [NodeType.COLLECT_INPUT]: 'collectInput',
+  [NodeType.AI_CHATBOT]: 'aiChatbot',
   [NodeType.END]: 'end',
   [NodeType.FALLBACK]: 'fallback',
 };
@@ -117,8 +123,12 @@ export class FlowGraphMapper {
     const label = feNode.data?.label ?? feNode.label ?? feNode.type;
 
     // Extract config — everything in data except label is config
-    const { label: _lbl, ...configFromData } = feNode.data ?? {};
+    const { label: _lbl, chatbotId: _cid, ...configFromData } = feNode.data ?? {};
     const config = Object.keys(configFromData).length > 0 ? configFromData : {};
+
+    // Extract chatbotId — can be in data.chatbotId or top-level chatbotId
+    const chatbotId: number | undefined =
+      feNode.data?.chatbotId ?? (feNode as any).chatbotId ?? undefined;
 
     // Store full FE UI metadata so we can round-trip it back
     const uiMeta: Record<string, any> = {
@@ -136,6 +146,7 @@ export class FlowGraphMapper {
       type: nodeType,
       label,
       config,
+      chatbotId: chatbotId ?? undefined,
       positionX: posX,
       positionY: posY,
       uiMeta,
@@ -177,6 +188,8 @@ export class FlowGraphMapper {
       position: { x: node.positionX, y: node.positionY },
       data: {
         label: node.label,
+        // Include chatbotId in data so FE can read it back
+        ...(node.chatbotId ? { chatbotId: node.chatbotId } : {}),
         ...(node.config ?? {}),
       },
       // Restore UI state from uiMeta
@@ -189,6 +202,7 @@ export class FlowGraphMapper {
         id: node.id,
         nodeKey: node.nodeKey,
         type: node.type,
+        chatbotId: node.chatbotId ?? null,
         abVariant: node.abVariant,
       },
     };

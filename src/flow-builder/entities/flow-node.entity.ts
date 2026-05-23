@@ -41,6 +41,9 @@ export enum NodeType {
   WAIT_FOR_INPUT = 'wait_for_input',
   COLLECT_INPUT = 'collect_input',
 
+  // AI nodes
+  AI_CHATBOT = 'ai_chatbot',
+
   // Terminal nodes
   END = 'end',
   FALLBACK = 'fallback',
@@ -71,6 +74,10 @@ export class FlowNode {
   // Node configuration (message content, conditions, etc.)
   @Column({ type: 'jsonb', nullable: true })
   config: Record<string, any>;
+
+  // For AI Chatbot nodes — reference to specific AI chatbot to use
+  @Column({ nullable: true })
+  chatbotId: number;
 
   // Drag & Drop UI position
   @Column({ type: 'float', default: 0 })

@@ -22,6 +22,15 @@ export class AiConversation {
   @Column({ default: true })
   isActive: boolean;
 
+  // Which chatbot is handling this conversation (null = active chatbot)
+  @Column({ nullable: true, type: 'int' })
+  chatbotId: number | null;
+
+  // When set, AI chatbot is active for this contact until this time
+  // null = no expiry (stays active until manually cleared)
+  @Column({ type: 'timestamp', nullable: true })
+  aiActiveUntil: Date | null;
+
   @OneToMany(() => AiMessage, (m) => m.conversation, { cascade: true })
   messages: AiMessage[];
 

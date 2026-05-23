@@ -8,6 +8,8 @@ import { FlowExecution, ExecutionStatus } from './entities/flow-execution.entity
 import { FlowExecutionStep, StepStatus } from './entities/flow-execution-step.entity';
 import { FlowBuilderService } from './flow-builder.service';
 import { FlowTemplateService } from './flow-template.service';
+import { AiChatbotService } from '../ai-chatbot/ai-chatbot.service';
+import { ContactsService } from '../contacts/contacts.service';
 
 export interface IncomingMessage {
   chatId: string;       // e.g. "919824160403@c.us"
@@ -50,6 +52,8 @@ export class FlowExecutorService {
     private readonly edgeRepo: Repository<FlowEdge>,
     private readonly flowService: FlowBuilderService,
     private readonly templateService: FlowTemplateService,
+    private readonly aiChatbotService: AiChatbotService,
+    private readonly contactsService: ContactsService,
   ) {}
 
   /**
@@ -60,23 +64,25 @@ export class FlowExecutorService {
   async handleIncomingMessage(msg: IncomingMessage, sender: FlowSendFn): Promise<boolean> {
     const waitKey = `${msg.userId}:${msg.chatId}`;
 
+    this.logger.log(`[FlowExecutor] ════════════════════════════════════════`);
     this.logger.log(`[FlowExecutor] Incoming msg userId=${msg.userId} chatId=${msg.chatId} body="${msg.body}"`);
 
     // ── Resume waiting execution ──────────────────────────────────────────────
     if (this.waitingForInput.has(waitKey)) {
-      this.logger.log(`[FlowExecutor] Resuming waiting execution for ${waitKey}`);
+      this.logger.log(`[FlowExecutor] ↩ Resuming waiting execution for ${waitKey}`);
       await this.resumeExecution(waitKey, msg, sender);
       return true;
     }
 
     // ── Find matching flow ────────────────────────────────────────────────────
+    this.logger.log(`[FlowExecutor] Searching for matching flow...`);
     const flow = await this.flowService.findMatchingFlow(msg.userId, msg.body, msg.chatId);
     if (!flow) {
-      this.logger.log(`[FlowExecutor] No matching active flow for userId=${msg.userId} body="${msg.body}"`);
+      this.logger.log(`[FlowExecutor] ✗ No matching active flow for userId=${msg.userId} body="${msg.body}"`);
       return false;
     }
 
-    this.logger.log(`[FlowExecutor] ✅ Matched flow "${flow.name}" (id=${flow.id}) for chatId=${msg.chatId}`);
+    this.logger.log(`[FlowExecutor] ✅ Matched flow "${flow.name}" (id=${flow.id}) triggerType="${flow.triggerType}" for chatId=${msg.chatId}`);
 
     await this.startExecution(flow, msg, sender);
     await this.flowService.recordTrigger(flow.id, msg.chatId);
@@ -212,25 +218,38 @@ export class FlowExecutorService {
     const MAX_STEPS = 50;
     let stepCount = 0;
 
+    this.logger.log(`[FLOW] ═══════════════════════════════════════════════`);
+    this.logger.log(`[FLOW] Starting execution from node="${startNodeKey}" flowId=${flowId} executionId=${executionId}`);
+    this.logger.log(`[FLOW] Total nodes=${nodes.length} edges=${edges.length}`);
+    this.logger.log(`[FLOW] Variables: ${JSON.stringify(variables)}`);
+
     while (currentKey && stepCount < MAX_STEPS) {
       if (visited.has(currentKey)) {
-        this.logger.warn(`[FlowExecutor] Loop detected at node="${currentKey}" — stopping`);
+        this.logger.warn(`[FLOW] ⚠ Loop detected at node="${currentKey}" — stopping`);
         break;
       }
       visited.add(currentKey);
       stepCount++;
 
       const node = nodeMap.get(currentKey);
-      if (!node) break;
+      if (!node) {
+        this.logger.warn(`[FLOW] ⚠ Node "${currentKey}" not found in nodeMap — stopping`);
+        break;
+      }
+
+      this.logger.log(`[FLOW] Step ${stepCount}: node="${currentKey}" type="${node.type}" label="${node.label}"`);
 
       // Skip trigger node (already processed)
       if (node.type === NodeType.TRIGGER) {
+        this.logger.log(`[FLOW] Skipping TRIGGER node, moving to next`);
         currentKey = this.getNextNodeKey(currentKey, edges);
+        this.logger.log(`[FLOW] Next node: "${currentKey}"`);
         continue;
       }
 
       // For A/B test nodes — skip nodes that don't match our variant
       if (node.abVariant && abVariant && node.abVariant !== abVariant) {
+        this.logger.log(`[FLOW] Skipping A/B node (variant mismatch: node="${node.abVariant}" current="${abVariant}")`);
         currentKey = this.getNextNodeKey(currentKey, edges, abVariant);
         continue;
       }
@@ -252,6 +271,7 @@ export class FlowExecutorService {
         );
 
         const durationMs = Date.now() - startTime;
+        this.logger.log(`[FLOW] Step ${stepCount} output: ${JSON.stringify(result.output)} (${durationMs}ms)`);
 
         await this.stepRepo.save(
           this.stepRepo.create({
@@ -267,6 +287,7 @@ export class FlowExecutorService {
 
         // COLLECT_INPUT pauses execution — resume happens on next message
         if (result.pause) {
+          this.logger.log(`[FLOW] ⏸ Execution paused at node="${currentKey}" waiting for user input`);
           const waitKey = `${userId}:${msg.chatId}`;
           const timeout = (resolvedConfig.timeout ?? 120) * 1000;
 
@@ -274,7 +295,7 @@ export class FlowExecutorService {
             this.waitingForInput.delete(waitKey);
             await this.executionRepo.update(executionId, { status: ExecutionStatus.TIMED_OUT });
             await this.flowService.recordAnalytics(flowId, userId, 'dropped', currentKey ?? undefined);
-            this.logger.warn(`[FlowExecutor] Input timeout for executionId=${executionId}`);
+            this.logger.warn(`[FLOW] ⏱ Input timeout for executionId=${executionId}`);
           }, timeout);
 
           this.waitingForInput.set(waitKey, {
@@ -297,15 +318,19 @@ export class FlowExecutorService {
 
         // END / FALLBACK — finish
         if (node.type === NodeType.END || node.type === NodeType.FALLBACK) {
+          this.logger.log(`[FLOW] ✅ Flow reached terminal node "${node.type}" — completing`);
           await this.markComplete(executionId, flowId, userId);
           return;
         }
 
         // Determine next node
-        currentKey = this.resolveNextKey(currentKey, edges, node, result.output, variables, abVariant);
+        const nextKey = this.resolveNextKey(currentKey, edges, node, result.output, variables, abVariant);
+        this.logger.log(`[FLOW] Next node after "${currentKey}": "${nextKey}"`);
+        currentKey = nextKey;
 
       } catch (err: any) {
-        this.logger.error(`[FlowExecutor] Node "${currentKey}" failed: ${err.message}`);
+        this.logger.error(`[FLOW] ❌ Node "${currentKey}" (type="${node.type}") threw error: ${err.message}`);
+        this.logger.error(`[FLOW] Stack: ${err.stack}`);
 
         const failedStep = this.stepRepo.create({
           executionId,
@@ -329,6 +354,7 @@ export class FlowExecutorService {
       }
     }
 
+    this.logger.log(`[FLOW] ═══════════════════════════════════════════════`);
     await this.markComplete(executionId, flowId, userId);
   }
 
@@ -346,25 +372,36 @@ export class FlowExecutorService {
     edges: FlowEdge[],
   ): Promise<{ output: Record<string, any>; pause?: boolean }> {
 
+    this.logger.log(`[NODE] ▶ Executing node type="${node.type}" key="${node.nodeKey}" label="${node.label}" executionId=${executionId}`);
+    this.logger.log(`[NODE] Config: ${JSON.stringify(config)}`);
+
     switch (node.type) {
       // ── Message nodes ──────────────────────────────────────────────────────
       case NodeType.SEND_TEXT: {
+        this.logger.log(`[NODE:SEND_TEXT] Sending message to chatId=${msg.chatId} → "${config.message}"`);
         await sender.sendText(msg.chatId, config.message);
+        this.logger.log(`[NODE:SEND_TEXT] ✅ Sent`);
         return { output: { sent: true, message: config.message } };
       }
 
       case NodeType.SEND_BUTTONS: {
+        this.logger.log(`[NODE:SEND_BUTTONS] Sending buttons to chatId=${msg.chatId} → "${config.message}" buttons=${JSON.stringify(config.buttons)}`);
         await sender.sendButtons(msg.chatId, config.message, config.buttons ?? []);
+        this.logger.log(`[NODE:SEND_BUTTONS] ✅ Sent`);
         return { output: { sent: true, buttons: config.buttons } };
       }
 
       case NodeType.SEND_LIST: {
+        this.logger.log(`[NODE:SEND_LIST] Sending list to chatId=${msg.chatId}`);
         await sender.sendList(msg.chatId, config.message, config.sections ?? [], config.buttonText);
+        this.logger.log(`[NODE:SEND_LIST] ✅ Sent`);
         return { output: { sent: true, sections: config.sections } };
       }
 
       case NodeType.SEND_TEMPLATE: {
+        this.logger.log(`[NODE:SEND_TEMPLATE] Sending template to chatId=${msg.chatId} → "${config.message}"`);
         await sender.sendText(msg.chatId, config.message);
+        this.logger.log(`[NODE:SEND_TEMPLATE] ✅ Sent`);
         return { output: { sent: true } };
       }
 
@@ -372,87 +409,163 @@ export class FlowExecutorService {
       case NodeType.SEND_VIDEO:
       case NodeType.SEND_AUDIO:
       case NodeType.SEND_FILE: {
-        // For media nodes, send caption as text if no media URL available in runtime
         const caption = config.caption ?? config.message ?? '';
+        this.logger.log(`[NODE:${node.type.toUpperCase()}] Sending media to chatId=${msg.chatId} url="${config.url}" caption="${caption}"`);
         if (caption) await sender.sendText(msg.chatId, caption);
+        this.logger.log(`[NODE:${node.type.toUpperCase()}] ✅ Sent`);
         return { output: { sent: true, mediaUrl: config.url } };
       }
 
       // ── Logic nodes ────────────────────────────────────────────────────────
       case NodeType.CONDITION: {
         const result = this.evaluateCondition(config, variables);
+        this.logger.log(`[NODE:CONDITION] field="${config.field}" operator="${config.operator}" value="${config.value}" → result=${result} branch="${result ? 'yes' : 'no'}"`);
+        this.logger.log(`[NODE:CONDITION] Variables snapshot: ${JSON.stringify(variables)}`);
         return { output: { conditionResult: result, branch: result ? 'yes' : 'no' } };
       }
 
       case NodeType.DELAY: {
         const ms = (config.delaySeconds ?? 1) * 1000;
+        this.logger.log(`[NODE:DELAY] Delaying ${config.delaySeconds}s (capped at 10s in runtime)`);
         if (config.message) await sender.sendText(msg.chatId, config.message);
-        await new Promise((r) => setTimeout(r, Math.min(ms, 10000))); // cap at 10s in runtime
+        await new Promise((r) => setTimeout(r, Math.min(ms, 10000)));
+        this.logger.log(`[NODE:DELAY] ✅ Done`);
         return { output: { delayed: true, delaySeconds: config.delaySeconds } };
       }
 
       case NodeType.RANDOM_SPLIT: {
         const branches: string[] = config.branches ?? ['A', 'B'];
         const chosen = branches[Math.floor(Math.random() * branches.length)];
+        this.logger.log(`[NODE:RANDOM_SPLIT] branches=${JSON.stringify(branches)} chosen="${chosen}"`);
         return { output: { branch: chosen } };
       }
 
       case NodeType.AB_TEST: {
         const variant = variables._abVariant ?? (Math.random() < 0.5 ? 'A' : 'B');
+        this.logger.log(`[NODE:AB_TEST] variant="${variant}"`);
         return { output: { variant, branch: variant } };
       }
 
       // ── Action nodes ───────────────────────────────────────────────────────
       case NodeType.SET_VARIABLE: {
+        this.logger.log(`[NODE:SET_VARIABLE] Setting "${config.variableName}" = "${config.value}"`);
         variables[config.variableName] = config.value;
+        this.logger.log(`[NODE:SET_VARIABLE] ✅ Variables now: ${JSON.stringify(variables)}`);
         return { output: { variableSet: config.variableName, value: config.value } };
       }
 
       case NodeType.ADD_TAG:
       case NodeType.REMOVE_TAG: {
-        // Tag operations are fire-and-forget in runtime (no contact repo here)
-        this.logger.log(`[FlowExecutor] ${node.type} tag="${config.tagName}" for chatId=${msg.chatId}`);
+        this.logger.log(`[NODE:${node.type.toUpperCase()}] tag="${config.tagName}" for chatId=${msg.chatId}`);
         return { output: { tag: config.tagName, action: node.type } };
       }
 
       case NodeType.ASSIGN_AGENT: {
-        this.logger.log(`[FlowExecutor] Assign agent team="${config.team}" for chatId=${msg.chatId}`);
+        this.logger.log(`[NODE:ASSIGN_AGENT] team="${config.team}" for chatId=${msg.chatId}`);
         return { output: { assigned: true, team: config.team } };
       }
 
       case NodeType.WEBHOOK_CALL: {
+        this.logger.log(`[NODE:WEBHOOK_CALL] Calling url="${config.url}" method="${config.method ?? 'POST'}"`);
         const response = await this.callWebhook(config, variables);
+        this.logger.log(`[NODE:WEBHOOK_CALL] ✅ Response: ${JSON.stringify(response)}`);
         if (config.saveResponseAs) {
           variables[config.saveResponseAs] = response;
+          this.logger.log(`[NODE:WEBHOOK_CALL] Saved response to variable "${config.saveResponseAs}"`);
         }
         return { output: { webhookCalled: config.url, response } };
       }
 
       case NodeType.JUMP_TO_FLOW: {
-        this.logger.log(`[FlowExecutor] Jump to flow id=${config.targetFlowId}`);
+        this.logger.log(`[NODE:JUMP_TO_FLOW] Jumping to flowId=${config.targetFlowId}`);
         return { output: { jumpTo: config.targetFlowId } };
       }
 
       // ── Input nodes ────────────────────────────────────────────────────────
       case NodeType.WAIT_FOR_INPUT:
       case NodeType.COLLECT_INPUT: {
+        this.logger.log(`[NODE:COLLECT_INPUT] Waiting for input, variableName="${config.variableName}" timeout=${config.timeoutSeconds ?? 120}s`);
         if (config.message) {
           await sender.sendText(msg.chatId, config.message);
+          this.logger.log(`[NODE:COLLECT_INPUT] Sent prompt: "${config.message}"`);
         }
+        this.logger.log(`[NODE:COLLECT_INPUT] ⏸ Pausing execution — waiting for user reply`);
         return { output: { waiting: true, variableName: config.variableName }, pause: true };
+      }
+
+      // ── AI Chatbot node ────────────────────────────────────────────────────
+      case NodeType.AI_CHATBOT: {
+        // chatbotId can be in node.chatbotId (new) or config.chatbotId (old saved flows)
+        const chatbotId: number | undefined = node.chatbotId ?? config.chatbotId ?? undefined;
+
+        this.logger.log(`[NODE:AI_CHATBOT] ▶ Starting AI node`);
+        this.logger.log(`[NODE:AI_CHATBOT] node.chatbotId=${node.chatbotId} config.chatbotId=${config.chatbotId} → resolved chatbotId=${chatbotId}`);
+        this.logger.log(`[NODE:AI_CHATBOT] Incoming message: "${msg.body}" from chatId=${msg.chatId}`);
+
+        try {
+          // Use the specific chatbot from the node, or fall back to active chatbot
+          const settings = chatbotId
+            ? await this.aiChatbotService.getChatbot(userId, chatbotId)
+            : await this.aiChatbotService.getSettings(userId);
+
+          this.logger.log(`[NODE:AI_CHATBOT] Using chatbot id=${settings.id} name="${settings.name}" provider="${settings.provider}" model="${settings.model}"`);
+          this.logger.log(`[NODE:AI_CHATBOT] autoReplyEnabled=${settings.autoReplyEnabled} apiKeySet=${!!settings.apiKey} apiKeyLength=${settings.apiKey?.length ?? 0}`);
+
+          if (!settings.autoReplyEnabled) {
+            this.logger.warn(`[NODE:AI_CHATBOT] ⚠ Skipped — autoReplyEnabled=false`);
+            return { output: { aiSkipped: true, reason: 'autoReplyEnabled is false' } };
+          }
+
+          if (!settings.apiKey) {
+            this.logger.warn(`[NODE:AI_CHATBOT] ⚠ Skipped — no API key configured`);
+            return { output: { aiSkipped: true, reason: 'no API key' } };
+          }
+
+          this.logger.log(`[NODE:AI_CHATBOT] Calling autoReply with chatbotId=${chatbotId}...`);
+
+          const { reply } = await this.aiChatbotService.autoReply(userId, {
+            message: msg.body,
+            contactId: msg.chatId,
+            chatbotId,
+          });
+
+          // ── Activate AI session for this contact ──────────────────────────
+          // After this node fires, ALL subsequent messages from this contact
+          // will be handled by this chatbot until the session is reset.
+          const ttlMinutes: number = config.sessionTtlMinutes ?? 0; // 0 = forever
+          await this.aiChatbotService.activateAiForContact(
+            userId,
+            msg.chatId,
+            chatbotId,
+            ttlMinutes,
+          );
+          this.logger.log(`[NODE:AI_CHATBOT] ✅ AI session activated for chatId=${msg.chatId} chatbotId=${chatbotId} ttl=${ttlMinutes}min`);
+
+          this.logger.log(`[NODE:AI_CHATBOT] ✅ AI replied: "${reply.slice(0, 120)}${reply.length > 120 ? '...' : ''}"`);
+          await sender.sendText(msg.chatId, reply);
+          this.logger.log(`[NODE:AI_CHATBOT] ✅ Reply sent to chatId=${msg.chatId}`);
+          return { output: { aiReplied: true, reply, chatbotId, sessionActivated: true } };
+        } catch (err: any) {
+          this.logger.error(`[NODE:AI_CHATBOT] ❌ Failed: ${err.message}`);
+          this.logger.error(`[NODE:AI_CHATBOT] Stack: ${err.stack}`);
+          return { output: { aiReplied: false, error: err.message } };
+        }
       }
 
       // ── Terminal nodes ─────────────────────────────────────────────────────
       case NodeType.END: {
+        this.logger.log(`[NODE:END] ✅ Flow completed`);
         return { output: { completed: true } };
       }
 
       case NodeType.FALLBACK: {
+        this.logger.log(`[NODE:FALLBACK] Sending fallback message: "${config.message}"`);
         if (config.message) await sender.sendText(msg.chatId, config.message);
         return { output: { fallback: true } };
       }
 
       default:
+        this.logger.warn(`[NODE:UNKNOWN] Unknown node type="${node.type}" — skipping`);
         return { output: { skipped: true, nodeType: node.type } };
     }
   }

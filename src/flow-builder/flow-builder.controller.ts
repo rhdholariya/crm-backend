@@ -282,4 +282,66 @@ export class FlowBuilderController {
     await this.automationService.delete(user.id, id);
     return successResponse('Automation workflow deleted successfully');
   }
+
+  // ── Test Endpoints ────────────────────────────────────────────────────────
+
+  // POST /api/flows/test-ai-node - Test AI node execution
+  @Post(':id/test-ai-node')
+  async testAiNode(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseIntPipe) flowId: number,
+    @Body() dto: { message: string; contactPhone?: string },
+  ) {
+    const { message, contactPhone = '919876543210' } = dto;
+    
+    try {
+      const flow = await this.flowService.findOne(user.id, flowId);
+      
+      if (flow.status !== 'active') {
+        return { success: false, message: 'Flow is not active' };
+      }
+      
+      // Check if flow has AI node
+      const aiNode = flow.nodes?.find((n: any) => n.type === 'ai_chatbot');
+      if (!aiNode) {
+        return { success: false, message: 'Flow has no AI Chatbot node' };
+      }
+      
+      // Get the chatbot
+      const chatbotId = aiNode.chatbotId;
+      if (!chatbotId) {
+        return { success: false, message: 'AI node has no chatbotId configured' };
+      }
+      
+      const chatbot = await this.flowService['aiChatbotService']?.getChatbot(user.id, chatbotId);
+      if (!chatbot) {
+        return { success: false, message: `Chatbot #${chatbotId} not found` };
+      }
+      
+      if (!chatbot.autoReplyEnabled) {
+        return { success: false, message: 'AI chatbot auto-reply is disabled' };
+      }
+      
+      if (!chatbot.apiKey) {
+        return { success: false, message: 'AI chatbot has no API key configured' };
+      }
+      
+      return successResponse('AI node test ready', {
+        flowId,
+        flowName: flow.name,
+        chatbotId,
+        chatbotName: chatbot.name,
+        message,
+        contactPhone,
+        instructions: [
+          `1. Send "${message}" from WhatsApp number ${contactPhone}`,
+          `2. The flow should trigger (triggerType: ${flow.triggerType})`,
+          `3. AI node should fire and use ${chatbot.name}`,
+          `4. Check WhatsApp for the AI reply`,
+        ],
+      });
+    } catch (err: any) {
+      return { success: false, message: 'AI node test failed', error: err.message };
+    }
+  }
 }

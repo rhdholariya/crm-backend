@@ -59,6 +59,19 @@ export class ContactsService {
   }
 
   /**
+   * Find a contact by phone number (digits only, partial match).
+   * Used by the AI chatbot contact_tag trigger.
+   */
+  async findByPhone(userId: number, phone: string): Promise<Contact | null> {
+    const digits = phone.replace(/[^0-9]/g, '');
+    if (!digits) return null;
+    return this.contactRepo.findOne({
+      where: { userId, phoneNumber: digits },
+      relations: ['tags'],
+    });
+  }
+
+  /**
    * Create a contact only if no existing contact matches the email or phone.
    * Returns the existing contact if a duplicate is found, or the newly created one.
    */

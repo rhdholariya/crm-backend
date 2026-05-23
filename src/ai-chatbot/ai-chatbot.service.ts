@@ -182,17 +182,30 @@ export class AiChatbotService {
     userId: number,
     dto: ChatRequestDto,
   ): Promise<{ reply: string; conversationId: number }> {
-    const settings = await this.getRawSettings(userId);
-    this.syncProviderFromModel(settings);
+    // Use specific chatbot if chatbotId provided, otherwise use active chatbot
+    let settings: AiSettings;
+    if (dto.chatbotId) {
+      const found = await this.settingsRepo.findOne({
+        where: { id: dto.chatbotId, userId },
+      });
+      if (!found) throw new NotFoundException(`Chatbot #${dto.chatbotId} not found`);
+      settings = found;
+    } else {
+      settings = await this.getSettings(userId);
+    }
 
-    // Get or create conversation
+    await this.syncProviderFromModel(settings);
+
+    // Get or create conversation — keyed by chatbotId so each chatbot has its own history
     const contactId = dto.contactId ?? 'default';
+    const convKey = dto.chatbotId ? `${contactId}:bot${dto.chatbotId}` : contactId;
+
     let conv = await this.convRepo.findOne({
-      where: { userId, contactId, isActive: true },
+      where: { userId, contactId: convKey, isActive: true },
     });
     if (!conv) {
       conv = await this.convRepo.save(
-        this.convRepo.create({ userId, contactId }),
+        this.convRepo.create({ userId, contactId: convKey }),
       );
     }
 
@@ -345,7 +358,7 @@ Customer message: "${dto.customerMessage}"`;
 
   // ── Internal ──────────────────────────────────────────────────────────────
 
-  private async getRawSettings(userId: number): Promise<AiSettings> {
+  async getRawSettings(userId: number): Promise<AiSettings> {
     let settings = await this.settingsRepo.findOne({ where: { userId } });
     if (!settings) {
       settings = await this.settingsRepo.save(
@@ -353,6 +366,77 @@ Customer message: "${dto.customerMessage}"`;
       );
     }
     return settings;
+  }
+
+  // ── AI Session Management ─────────────────────────────────────────────────
+
+  /**
+   * Activate AI chatbot for a specific contact.
+   * After this, any message from this contact will be handled by the AI chatbot.
+   * @param chatbotId - which chatbot to use (null = active chatbot)
+   * @param ttlMinutes - how long to keep AI active (0 = forever until reset)
+   */
+  async activateAiForContact(
+    userId: number,
+    contactId: string,
+    chatbotId?: number,
+    ttlMinutes = 0,
+  ): Promise<void> {
+    const existing = await this.convRepo.findOne({
+      where: { userId, contactId, isActive: true },
+    });
+
+    const aiActiveUntil: Date | null = ttlMinutes > 0
+      ? new Date(Date.now() + ttlMinutes * 60 * 1000)
+      : null;
+
+    const chatbotIdValue: number | null = chatbotId ?? null;
+
+    if (!existing) {
+      const newConv = this.convRepo.create({ userId, contactId, isActive: true });
+      newConv.chatbotId = chatbotIdValue;
+      newConv.aiActiveUntil = aiActiveUntil;
+      await this.convRepo.save(newConv);
+    } else {
+      existing.chatbotId = chatbotIdValue;
+      existing.aiActiveUntil = aiActiveUntil;
+      existing.isActive = true;
+      await this.convRepo.save(existing);
+    }
+  }
+
+  /**
+   * Check if AI chatbot is active for a contact.
+   * Returns the chatbotId to use, or null if AI is not active.
+   */
+  async getActiveAiSession(
+    userId: number,
+    contactId: string,
+  ): Promise<{ active: boolean; chatbotId?: number } | null> {
+    const conv = await this.convRepo.findOne({
+      where: { userId, contactId, isActive: true },
+    });
+
+    if (!conv) return null;
+
+    // Check if session has expired
+    if (conv.aiActiveUntil && new Date() > conv.aiActiveUntil) {
+      // Session expired — deactivate
+      await this.convRepo.update(conv.id, { isActive: false });
+      return null;
+    }
+
+    return { active: true, chatbotId: conv.chatbotId ?? undefined };
+  }
+
+  /**
+   * Deactivate AI chatbot for a contact (reset conversation).
+   */
+  async deactivateAiForContact(userId: number, contactId: string): Promise<void> {
+    await this.convRepo.update(
+      { userId, contactId, isActive: true },
+      { isActive: false },
+    );
   }
 
   // Auto-correct provider based on model name so mismatched DB rows still work

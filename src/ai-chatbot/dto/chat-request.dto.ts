@@ -1,4 +1,4 @@
-import { IsString, IsNotEmpty, IsOptional } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional, IsNumber } from 'class-validator';
 
 export class ChatRequestDto {
   @IsString()
@@ -8,6 +8,11 @@ export class ChatRequestDto {
   @IsOptional()
   @IsString()
   contactId?: string;
+
+  // Optional: use a specific chatbot by ID instead of the active one
+  @IsOptional()
+  @IsNumber()
+  chatbotId?: number;
 }
 
 export class SuggestReplyDto {

@@ -664,6 +664,19 @@ export class FlowBuilderService {
       relations: ['nodes'],
     });
 
+    this.logger.log(`[FlowBuilder] findMatchingFlow: userId=${userId} message="${message}" chatId="${chatId}"`);
+    this.logger.log(`[FlowBuilder] Active flows count: ${activeFlows.length}`);
+
+    if (activeFlows.length === 0) {
+      this.logger.warn(`[FlowBuilder] No active flows found for userId=${userId}`);
+      return null;
+    }
+
+    // Log all active flows
+    for (const f of activeFlows) {
+      this.logger.log(`[FlowBuilder] Active flow: id=${f.id} name="${f.name}" triggerType="${f.triggerType}" triggerConfig=${JSON.stringify(f.triggerConfig)} nodes=${f.nodes?.length ?? 0}`);
+    }
+
     // keyword / button_reply flows first, any_message flows last
     const sorted = [...activeFlows].sort((a, b) => {
       const priority = (t: string) => (t === 'any_message' ? 1 : 0);
@@ -672,9 +685,16 @@ export class FlowBuilderService {
 
     for (const flow of sorted) {
       const triggerNode = flow.nodes?.find((n) => n.type === NodeType.TRIGGER);
-      if (!triggerNode) continue;
+      if (!triggerNode) {
+        this.logger.warn(`[FlowBuilder] Flow "${flow.name}" (id=${flow.id}) has no TRIGGER node — skipping`);
+        continue;
+      }
+
+      this.logger.log(`[FlowBuilder] Checking flow "${flow.name}" (id=${flow.id}) triggerType="${flow.triggerType}" triggerNode.config=${JSON.stringify(triggerNode.config)}`);
 
       const matched = this.matchesTrigger(flow, triggerNode, message);
+      this.logger.log(`[FlowBuilder] Flow "${flow.name}" matched=${matched}`);
+
       if (!matched) continue;
 
       // Rate limit check
@@ -684,9 +704,11 @@ export class FlowBuilderService {
         continue;
       }
 
+      this.logger.log(`[FlowBuilder] ✅ Selected flow "${flow.name}" (id=${flow.id})`);
       return flow;
     }
 
+    this.logger.warn(`[FlowBuilder] No flow matched for message="${message}"`);
     return null;
   }
 
@@ -696,33 +718,56 @@ export class FlowBuilderService {
     const flowCfg = flow.triggerConfig ?? {};
     const lowerMsg = message.toLowerCase().trim();
 
+    this.logger.log(`[FlowBuilder] matchesTrigger: type="${flow.triggerType}" nodeCfg=${JSON.stringify(nodeCfg)} flowCfg=${JSON.stringify(flowCfg)} message="${lowerMsg}"`);
+
     switch (flow.triggerType) {
       case 'keyword': {
-        // Merge keywords from both sources — node config takes priority
         const keywords: string[] = nodeCfg.keywords ?? flowCfg.keywords ?? [];
         const matchMode: string = nodeCfg.matchMode ?? flowCfg.matchMode ?? 'contains';
+
+        this.logger.log(`[FlowBuilder] keyword check: keywords=${JSON.stringify(keywords)} matchMode="${matchMode}"`);
 
         if (keywords.length === 0) {
           this.logger.warn(`[FlowBuilder] Flow "${flow.name}" (id=${flow.id}) has no keywords configured`);
           return false;
         }
 
-        return keywords.some((kw) => {
+        const result = keywords.some((kw) => {
           const lowerKw = kw.toLowerCase().trim();
-          if (matchMode === 'exact') return lowerMsg === lowerKw;
-          if (matchMode === 'starts_with') return lowerMsg.startsWith(lowerKw);
-          return lowerMsg.includes(lowerKw); // default: contains
+          let matched = false;
+          if (matchMode === 'exact') matched = lowerMsg === lowerKw;
+          else if (matchMode === 'starts_with') matched = lowerMsg.startsWith(lowerKw);
+          else matched = lowerMsg.includes(lowerKw);
+          this.logger.log(`[FlowBuilder] keyword "${kw}" vs "${lowerMsg}" (${matchMode}) → ${matched}`);
+          return matched;
         });
+        return result;
       }
+
       case 'any_message':
+        this.logger.log(`[FlowBuilder] any_message → always true`);
         return true;
+
       case 'first_message':
-        return !!(nodeCfg.isFirstMessage ?? flowCfg.isFirstMessage);
+        // first_message trigger always matches — the flow fires on any message
+        // (it's the flow's responsibility to check if it's truly the first message)
+        this.logger.log(`[FlowBuilder] first_message → true`);
+        return true;
+
       case 'button_reply': {
         const buttonIds: string[] = nodeCfg.buttonIds ?? flowCfg.buttonIds ?? [];
-        return buttonIds.includes(message);
+        const result = buttonIds.includes(message);
+        this.logger.log(`[FlowBuilder] button_reply: buttonIds=${JSON.stringify(buttonIds)} message="${message}" → ${result}`);
+        return result;
       }
+
+      case 'contact_tag':
+        // contact_tag is handled at the WhatsApp service level
+        this.logger.log(`[FlowBuilder] contact_tag → true (checked at service level)`);
+        return true;
+
       default:
+        this.logger.warn(`[FlowBuilder] Unknown triggerType="${flow.triggerType}" → false`);
         return false;
     }
   }
